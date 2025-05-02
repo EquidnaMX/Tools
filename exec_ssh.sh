@@ -10,7 +10,7 @@ print_usage(){
 Usage:
   $0 <remote_user> <network_spec> [--command "cmd"] [--script /path/to/script.sh]
       [--max-parallel N] [--key /path/to/private_key] [--email you@example.com]
-      [--retry N] [--save-logs] [--webhook URL] [--timeout N]...
+      [--retry N] [--save-logs] [--webhook URL] [--timeout N] [--strict-host-checking]...
 EOF
 }
 
@@ -19,7 +19,7 @@ validate_prerequisites(){
   local missing_dependencies=()
 
   # Check for required commands
-  for cmd in ssh sshpass ping curl; do
+  for cmd in ssh sshpass ping curl timeout; do
     if ! command -v "$cmd" &>/dev/null; then
       missing_dependencies+=("$cmd")
     fi
@@ -54,6 +54,7 @@ RETRY_TIMES=0;
 SAVE_LOGS=false; 
 WEBHOOKS=()
 TIMEOUT=10
+STRICT_CHECKING=false
 
 while (( $# )); do
   case $1 in
@@ -66,6 +67,7 @@ while (( $# )); do
     --save-logs)     SAVE_LOGS=true; shift ;;
     --webhook)       WEBHOOKS+=("$2"); shift 2 ;;
     --timeout)       TIMEOUT=$2; shift 2 ;;
+    --strict-host-checking) STRICT_CHECKING=true; shift ;;
     *) echo "Unknown option: $1"; print_usage; exit 1 ;;
   esac
 done
@@ -74,13 +76,24 @@ if [[ -z $SSH_COMMAND && -z $SCRIPT_FILE ]]; then
   echo "Error: must specify --command or --script."; print_usage; exit 1
 fi
 
+# Validate that the provided script file exists
+if [[ -n $SCRIPT_FILE && ! -f $SCRIPT_FILE ]]; then
+  echo -e "${RED}Error: The script file '$SCRIPT_FILE' does not exist.${NC}"
+  exit 1
+fi
+
 # Call the validation function at the start of the script
 validate_prerequisites
 
 # SSH options
-SSH_OPTIONS="-o ConnectTimeout=$TIMEOUT -o StrictHostKeyChecking=no \
--o UserKnownHostsFile=/dev/null -o ServerAliveInterval=3 -o ServerAliveCountMax=1"
+SSH_OPTIONS="-o ConnectTimeout=$TIMEOUT -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=3 -o ServerAliveCountMax=1 -o LogLevel=ERROR"
 [[ -n $PRIVATE_KEY ]] && SSH_OPTIONS+=" -i $PRIVATE_KEY"
+
+if [[ $STRICT_CHECKING == true ]]; then
+  SSH_OPTIONS+=" -o StrictHostKeyChecking=yes"
+else
+  SSH_OPTIONS+=" -o StrictHostKeyChecking=no"
+fi
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 csv_file="ssh_results_${timestamp}.csv"
@@ -88,7 +101,8 @@ html_file="ssh_results_${timestamp}.html"
 log_dir="logs_${timestamp}"
 
 declare -A RESULTS TIMES
-alive_hosts=() final_hosts=()
+alive_hosts=() 
+final_hosts=()
 
 # Password if no key
 if [[ -z $PRIVATE_KEY ]]; then
@@ -107,6 +121,7 @@ cidr2ips(){
     alive_hosts+=("$((i>>24&0xFF)).$((i>>16&0xFF)).$((i>>8&0xFF)).$((i&0xFF))")
   done
 }
+
 parse_ips(){
   if [[ $NETWORK_SPEC == */* ]]; then
     cidr2ips "$NETWORK_SPEC"
@@ -129,36 +144,55 @@ send_webhooks(){
   done
 }
 
-# SSH execution
+# Save logs only when response is not empty and create sub-folders for success, error, and timeout
 execute_on_host(){
   local IP=$1 tries=0
   while :; do
     local start=$(date +%s)
     if [[ -n $SCRIPT_FILE ]]; then
-      output=$(sshpass -e ssh $SSH_OPTIONS "$REMOTE_USER@$IP" 'bash -s' <"$SCRIPT_FILE" 2>&1)
+      output=$(timeout $TIMEOUT sshpass -e ssh $SSH_OPTIONS "$REMOTE_USER@$IP" 'bash -s' <"$SCRIPT_FILE" 2>&1)
     else
-      output=$(sshpass -e ssh $SSH_OPTIONS "$REMOTE_USER@$IP" "$SSH_COMMAND" 2>&1)
+      output=$(timeout $TIMEOUT sshpass -e ssh $SSH_OPTIONS "$REMOTE_USER@$IP" "$SSH_COMMAND" 2>&1)
     fi
     local status=$?; local end=$(date +%s)
     TIMES["$IP"]=$((end-start))
 
+    if (( status == 124 )); then
+      RESULTS["$IP"]="Timeout"
+      if [[ -n $output ]]; then
+        mkdir -p "$log_dir/timeout"
+        echo "$output" >"$log_dir/timeout/$IP.log"
+      fi
+      echo -e "[${IP}] ${RED}⏳ Timeout${NC}"
+      break
+    fi
+
     if grep -qE "Permission denied|Authentication failed|Host key verification failed" <<<"$output"; then
       RESULTS["$IP"]="Auth Failed"
-      $SAVE_LOGS && { mkdir -p "$log_dir"; echo "$output" >"$log_dir/$IP.log"; }
+      if [[ -n $output ]]; then
+        mkdir -p "$log_dir/error"
+        echo "$output" >"$log_dir/error/$IP.log"
+      fi
       echo -e "[${IP}] ${YELLOW}⚠️ Auth Failed${NC}"
       break
     fi
 
-    if (( status==0 )); then
+    if (( status == 0 )); then
       RESULTS["$IP"]="Success"
-      $SAVE_LOGS && { mkdir -p "$log_dir"; echo "$output" >"$log_dir/$IP.log"; }
+      if [[ -n $output ]]; then
+        mkdir -p "$log_dir/success"
+        echo "$output" >"$log_dir/success/$IP.log"
+      fi
       echo -e "[${IP}] ${GREEN}✅ Success${NC}"
       break
     else
       ((tries++))
-      if (( tries>RETRY_TIMES )); then
+      if (( tries > RETRY_TIMES )); then
         RESULTS["$IP"]="Failed"
-        $SAVE_LOGS && { mkdir -p "$log_dir"; echo "$output" >"$log_dir/$IP.log"; }
+        if [[ -n $output ]]; then
+          mkdir -p "$log_dir/error"
+          echo "$output" >"$log_dir/error/$IP.log"
+        fi
         echo -e "[${IP}] ${RED}❌ Failed after $RETRY_TIMES retries${NC}"
         break
       else
@@ -176,6 +210,7 @@ parse_ips
 echo -n "🔍 Scanning alive hosts... "
 spinner=( '|' '/' '-' '\\' )
 spin_pid=""
+
 spin() {
   while :; do
     for c in "${spinner[@]}"; do
@@ -184,6 +219,7 @@ spin() {
     done
   done
 }
+
 spin & spin_pid=$!
 
 for ip in "${alive_hosts[@]}"; do
@@ -194,26 +230,15 @@ kill "$spin_pid" 2>/dev/null
 wait "$spin_pid" 2>/dev/null || true
 echo -e "\\r✅ Found ${#final_hosts[@]} alive hosts.          "
 
-# Launch SSH jobs
-pids=()
+# Launch SSH jobs sequentially
 for ip in "${final_hosts[@]}"; do
   RESULTS["$ip"]="Pending"
-  execute_on_host "$ip" & pids+=($!)
-  if (( ${#pids[@]} >= MAX_PARALLEL )); then
-    wait "${pids[@]}" || true
-    pids=()
-  fi
+  execute_on_host "$ip"
 done
-
-# Final wait for leftover jobs
-if (( ${#pids[@]} > 0 )); then
-  wait "${pids[@]}" || true
-fi
 
 echo -e "\n🎯 Execution complete!"
 
 # Save CSV and HTML
-echo "Host,Status,Time(s)" >"$csv_file"
 {
   echo "<html><body><h2>SSH Results</h2><table border=1>"
   echo "<tr><th>Host</th><th>Status</th><th>Time(s)</th></tr>"
@@ -222,6 +247,7 @@ echo "Host,Status,Time(s)" >"$csv_file"
     [[ ${RESULTS[$ip]} == "Success" ]] && color="green"
     [[ ${RESULTS[$ip]} == "Auth Failed" ]] && color="orange"
     [[ ${RESULTS[$ip]} == "Failed" ]] && color="red"
+    [[ ${RESULTS[$ip]} == "Timeout" ]] && color="blue"
     echo "<tr><td>$ip</td><td style='color:$color'>${RESULTS[$ip]}</td><td>${TIMES[$ip]:-0}</td></tr>"
     echo "$ip,${RESULTS[$ip]},${TIMES[$ip]:-0}" >>"$csv_file"
   done
@@ -229,23 +255,28 @@ echo "Host,Status,Time(s)" >"$csv_file"
 } >"$html_file"
 
 # Super summary
-success=0; authfail=0; failed=0; pending=0
-for st in "${RESULTS[@]}"; do
-  case $st in
+success=0; authfail=0; failed=0; timeout=0
+for ip in "${final_hosts[@]}"; do
+  case ${RESULTS[$ip]} in
     "Success") ((success++)) ;;
     "Auth Failed") ((authfail++)) ;;
     "Failed") ((failed++)) ;;
-    *) ((pending++)) ;;
+    "Timeout") ((timeout++)) ;;
   esac
+  # Ensure only final states are counted
+  if [[ ${RESULTS[$ip]} == "Pending" ]]; then
+    continue
+  fi
 done
 
+# Display summary
 echo -e "${CYAN}═══════════════════════"
 echo    "      Final Summary     "
 echo -e "═══════════════════════${NC}"
 echo -e "✅ Success: ${GREEN}$success${NC}"
 echo -e "⚠️  Auth Failed: ${YELLOW}$authfail${NC}"
 echo -e "❌ Failed: ${RED}$failed${NC}"
-echo -e "⏳ Pending: ${CYAN}$pending${NC}"
+echo -e "⏳ Timeout: ${CYAN}$timeout${NC}"
 echo -e "${CYAN}═══════════════════════${NC}"
 
 # Email if configured
