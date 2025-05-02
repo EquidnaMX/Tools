@@ -9,17 +9,51 @@ print_usage(){
   cat <<EOF
 Usage:
   $0 <remote_user> <network_spec> [--command "cmd"] [--script /path/to/script.sh]
-      [--max_parallel N] [--key /path/to/private_key] [--email you@example.com]
-      [--retry N] [--save_logs] [--webhook URL]...
+      [--max-parallel N] [--key /path/to/private_key] [--email you@example.com]
+      [--retry N] [--save-logs] [--webhook URL] [--timeout N]...
 EOF
 }
 
-# Parse arguments
-if [ $# -lt 2 ]; then print_usage; exit 1; fi
-REMOTE_USER=$1; NETWORK_SPEC=$2; shift 2
+# Validate prerequisites before execution
+validate_prerequisites(){
+  local missing_dependencies=()
 
-SSH_COMMAND=""; SCRIPT_FILE=""; PRIVATE_KEY=""; EMAIL=""
-MAX_PARALLEL=10; RETRY_TIMES=0; SAVE_LOGS=false; WEBHOOKS=()
+  # Check for required commands
+  for cmd in ssh sshpass ping curl; do
+    if ! command -v "$cmd" &>/dev/null; then
+      missing_dependencies+=("$cmd")
+    fi
+  done
+
+  # Notify user if any dependencies are missing
+  if (( ${#missing_dependencies[@]} > 0 )); then
+    echo -e "${RED}Error: Missing dependencies: ${missing_dependencies[*]}${NC}"
+    echo "Please install the missing dependencies and try again."
+    exit 1
+  fi
+}
+
+# Parse arguments
+if [ $# -lt 2 ]; then 
+  print_usage; 
+  exit 1; 
+fi
+
+REMOTE_USER=$1; 
+NETWORK_SPEC=$2; 
+
+shift 2
+
+SSH_COMMAND=""; 
+SCRIPT_FILE=""; 
+PRIVATE_KEY=""; 
+EMAIL=""
+
+MAX_PARALLEL=10; 
+RETRY_TIMES=0; 
+SAVE_LOGS=false; 
+WEBHOOKS=()
+TIMEOUT=10
 
 while (( $# )); do
   case $1 in
@@ -27,10 +61,11 @@ while (( $# )); do
     --script)        SCRIPT_FILE=$2; shift 2 ;;
     --key)           PRIVATE_KEY=$2; shift 2 ;;
     --email)         EMAIL=$2; shift 2 ;;
-    --max_parallel)  MAX_PARALLEL=$2; shift 2 ;;
+    --max-parallel)  MAX_PARALLEL=$2; shift 2 ;;
     --retry)         RETRY_TIMES=$2; shift 2 ;;
-    --save_logs)     SAVE_LOGS=true; shift ;;
+    --save-logs)     SAVE_LOGS=true; shift ;;
     --webhook)       WEBHOOKS+=("$2"); shift 2 ;;
+    --timeout)       TIMEOUT=$2; shift 2 ;;
     *) echo "Unknown option: $1"; print_usage; exit 1 ;;
   esac
 done
@@ -39,8 +74,11 @@ if [[ -z $SSH_COMMAND && -z $SCRIPT_FILE ]]; then
   echo "Error: must specify --command or --script."; print_usage; exit 1
 fi
 
+# Call the validation function at the start of the script
+validate_prerequisites
+
 # SSH options
-SSH_OPTIONS="-o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+SSH_OPTIONS="-o ConnectTimeout=$TIMEOUT -o StrictHostKeyChecking=no \
 -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=3 -o ServerAliveCountMax=1"
 [[ -n $PRIVATE_KEY ]] && SSH_OPTIONS+=" -i $PRIVATE_KEY"
 
@@ -76,6 +114,8 @@ parse_ips(){
     IFS=- read -r s e <<<"$NETWORK_SPEC"
     base=${s%.*}.; start=${s##*.}; end=${e##*.}
     for ((i=start; i<=end; i++)); do alive_hosts+=("${base}${i}"); done
+  elif [[ $NETWORK_SPEC =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    alive_hosts+=("$NETWORK_SPEC")
   else
     echo "Invalid network spec"; exit 1
   fi
@@ -189,11 +229,14 @@ echo "Host,Status,Time(s)" >"$csv_file"
 } >"$html_file"
 
 # Super summary
-success=0; authfail=0; failed=0
+success=0; authfail=0; failed=0; pending=0
 for st in "${RESULTS[@]}"; do
-  [[ $st == "Success" ]] && ((success++))
-  [[ $st == "Auth Failed" ]] && ((authfail++))
-  [[ $st == "Failed" ]] && ((failed++))
+  case $st in
+    "Success") ((success++)) ;;
+    "Auth Failed") ((authfail++)) ;;
+    "Failed") ((failed++)) ;;
+    *) ((pending++)) ;;
+  esac
 done
 
 echo -e "${CYAN}═══════════════════════"
@@ -202,6 +245,7 @@ echo -e "═══════════════════════${
 echo -e "✅ Success: ${GREEN}$success${NC}"
 echo -e "⚠️  Auth Failed: ${YELLOW}$authfail${NC}"
 echo -e "❌ Failed: ${RED}$failed${NC}"
+echo -e "⏳ Pending: ${CYAN}$pending${NC}"
 echo -e "${CYAN}═══════════════════════${NC}"
 
 # Email if configured
