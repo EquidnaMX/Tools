@@ -4,8 +4,8 @@ Documentación del sistema de testing del proyecto.
 
 ## 📊 Cobertura Actual
 
-- **Total de Tests:** 417 totales
-- **Ultima ejecucion completa:** 416 passed, 1 skipped
+- **Total de Tests:** 435 totales
+- **Ultima ejecucion completa:** 434 passed, 1 skipped
 - **Cobertura Global:** 43% (3321 líneas sin cubrir de 5870)
 - **Framework:** pytest 7.4.3
 - **Plugins:** pytest-cov, pytest-mock, pytest-asyncio
@@ -65,6 +65,9 @@ tests/
 ├── backup/          # Backup module
 │   ├── test_backup_commands.py
 │   └── test_backup_manager.py
+├── monitoring/      # Monitoring and alerting
+│   ├── test_monitoring_commands.py
+│   └── test_monitoring_manager.py
 ├── cloud/           # Cloud storage providers
 │   ├── test_cloud_providers.py
 │   ├── test_config_manager.py
@@ -321,12 +324,14 @@ def test_api_call():
 
 ### Completado ✅
 
-- [x] 417 tests definidos en la suite
-- [x] 416 tests pasando en la ultima ejecucion completa
+- [x] 435 tests definidos en la suite
+- [x] 434 tests pasando en la ultima ejecucion completa
 - [x] Tests organizados por módulo
 - [x] Configuración pytest completa
 - [x] Fixtures para datos de prueba
 - [x] Mocking para dependencias externas
+- [x] Tests para módulo backup (5 tests)
+- [x] Tests para módulo monitoring (18 tests)
 
 ### En Progreso 🔄
 
@@ -337,8 +342,6 @@ def test_api_call():
 
 ### Planeado 📋
 
-- [ ] Tests para módulo backup
-- [ ] Tests para módulo monitoring
 - [ ] Tests para módulo database
 - [ ] Tests para módulo containers
 - [ ] Tests para módulo security

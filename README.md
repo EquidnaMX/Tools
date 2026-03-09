@@ -1,4 +1,4 @@
-# Tools - Admin Toolkit v2.7.0
+# Tools - Admin Toolkit v2.8.0
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-411%20passing-brightgreen.svg)](tests/)
@@ -9,11 +9,11 @@ Toolkit profesional de administración de sistemas con CLI unificado para gesti�
 
 **Features principales:**
 
-- 🚀 CLI unificado con 7 módulos integrados
+- 🚀 CLI unificado con 8 módulos integrados
 - ☁️ Multi-cloud storage (AWS, Azure, GCP, DigitalOcean, B2, MinIO)
 - 🔒 Optimizaciones avanzadas (cache, compression, encryption, bandwidth limiting)
 - 🔐 Gestión segura de credenciales con keyring
-- 🧪 417 tests totales (416 passed, 1 skipped)
+- 🧪 435 tests totales (434 passed, 1 skipped)
 - 📦 Arquitectura Python OOP moderna y extensible
 
 ## � Quick Start
@@ -41,7 +41,7 @@ tools mail audit --domain example.com
 ## 📁 Estructura del Proyecto
 
 ```
-Tools/                          # Toolkit completo v2.7.0
+Tools/                          # Toolkit completo v2.8.0
 ├── tools/                      # 🐍 Módulos Python principales
 │   ├── cli/                   # CLI unificado
 │   │   ├── main.py           # Entry point: `tools` or `python -m tools.cli.main`
@@ -57,7 +57,7 @@ Tools/                          # Toolkit completo v2.7.0
 │   │   ├── reporter.py       # Reportes JSON/CSV/Table
 │   │   └── exceptions.py     # Excepciones personalizadas
 │   │
-│   ├── cloud/                # ☁️ Multi-cloud storage (v2.7.0)
+│   ├── cloud/                # ☁️ Multi-cloud storage (v2.8.0)
 │   │   ├── providers.py      # CloudProvider base class
 │   │   ├── aws_s3.py         # AWS S3 implementation
 │   │   ├── azure_blob.py     # Azure Blob Storage
@@ -103,11 +103,14 @@ Tools/                          # Toolkit completo v2.7.0
 │   │   ├── manager.py        # Creación, restore y políticas de retención
 │   │   └── __init__.py
 │   │
+│   ├── monitoring/           # 📊 Monitoreo y alertas
+│   │   ├── manager.py        # Métricas de sistema, checks HTTP/puerto, alertas
+│   │   └── __init__.py
+│   │
 │   └── __init__.py           # Package exports
 │
-├── tests/                      # 🧪 Suite de tests (417 tests totales)
-│   ├── backup/                # Tests backup module
-│   ├── cloud/                 # Tests cloud module
+├── tests/                      # 🧪 Suite de tests (435 tests totales)
+│   ├── backup/                # Tests backup module│   ├── monitoring/            # Tests monitoring module│   ├── cloud/                 # Tests cloud module
 │   ├── remote/                # Tests remote module
 │   ├── mail/                  # Tests mail module
 │   ├── dns/                   # Tests DNS module
@@ -216,7 +219,7 @@ pip install git+https://github.com/gruelasjr/Tools.git
 ```bash
 # Verificar que el comando 'tools' está disponible
 tools --version
-# Output: Tools Admin Toolkit v2.7.0
+# Output: Tools Admin Toolkit v2.8.0
 
 # Listar comandos disponibles
 tools --help
@@ -246,7 +249,7 @@ make pre-commit
 
 ## 🎯 Uso del CLI
 
-El toolkit proporciona un CLI unificado con 7 módulos principales:
+El toolkit proporciona un CLI unificado con 8 módulos principales:
 
 ### 1. ☁️ Cloud Storage (Multi-Provider)
 
@@ -620,7 +623,28 @@ tools backup restore ./backups/daily_20260309_120000_000001.tar.gz --destination
 
 ---
 
-### 7. ⚙️ Configuration Management
+### 7. 📊 Monitoreo y Alertas
+
+```bash
+# Verificar recursos del sistema
+tools monitoring check-resources --cpu-threshold 80 --memory-threshold 80
+
+# Verificar puerto abierto
+tools monitoring check-port localhost 22
+
+# Verificar endpoint HTTP
+tools monitoring check-http https://example.com --expected-status 200
+
+# Ver logs de monitoreo
+tools monitoring logs --limit 20 --level warning
+
+# Monitoreo continuo (watch mode)
+tools monitoring watch --interval 5 --cpu-threshold 80
+```
+
+---
+
+### 8. ⚙️ Configuration Management
 
 ```bash
 # Listar perfiles disponibles
@@ -635,7 +659,7 @@ tools config validate ~/.tools/cloud_profiles.yml
 
 ## 📖 Documentación Detallada
 
-- [**tools/cloud/README.md**](tools/cloud/README.md) - Cloud storage multi-provider v2.7.0
+- [**tools/cloud/README.md**](tools/cloud/README.md) - Cloud storage multi-provider v2.8.0
 - [**tools/cloud/CHANGELOG.md**](tools/cloud/CHANGELOG.md) - Historial de cambios cloud module
 - [**tools/cloud/MIGRATION.md**](tools/cloud/MIGRATION.md) - Guía de migración entre versiones
 - [**tools/system/README.md**](tools/system/README.md) - System utilities documentation
@@ -643,7 +667,7 @@ tools config validate ~/.tools/cloud_profiles.yml
 - [**CHANGELOG.md**](CHANGELOG.md) - Changelog general del proyecto
 - [**LEGACY_VERIFICATION_REPORT.md**](LEGACY_VERIFICATION_REPORT.md) - Reporte de migración legacy→Python
 
-## ✨ Características v2.7.0 (Marzo 2026)
+## ✨ Características v2.8.0 (Marzo 2026)
 
 ### 🆕 Optimizaciones Avanzadas
 
@@ -715,7 +739,7 @@ tools config validate ~/.tools/cloud_profiles.yml
 
 ### 📊 Testing y Calidad
 
-- ✅ **417 tests totales** (416 passed, 1 skipped)
+- ✅ **435 tests totales** (434 passed, 1 skipped)
 - ✅ **Compatibilidad cloud retroactiva** para imports y APIs legacy
 - ✅ **Flake8 clean** (0 violations)
 - ✅ **Type hints** en funciones críticas
@@ -740,13 +764,13 @@ Repositorio personal de herramientas administrativas. Para mejoras o sugerencias
 4. Push to branch (`git push origin feature/AmazingFeature`)
 5. Abrir Pull Request
 
-## 🎯 Estado del Proyecto v2.7.0
+## 🎯 Estado del Proyecto v2.8.0
 
 ### ✅ Completado (Production Ready)
 
 #### Módulos Core
 
-- ✅ **CLI Unificado** - 7 módulos principales integrados
+- ✅ **CLI Unificado** - 8 módulos principales integrados
 - ✅ **Cloud Storage** - Multi-provider con 6 clouds soportados
 - ✅ **Remote Management** - SSH execution, file distribution, network scanning
 - ✅ **Mail Auditing** - Domain validation, DNS checks, health monitoring
