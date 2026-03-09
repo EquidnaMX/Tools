@@ -1,4 +1,4 @@
-# Dependencias de desarrollo para download_do_space.py
+# Dependencias de desarrollo para Tools Admin Toolkit
 
 # Runtime
 pyyaml>=5.4
@@ -16,3 +16,4 @@ pytest-cov>=4.0.0
 black>=23.0.0
 flake8>=6.0.0
 mypy>=1.0.0
+pre-commit>=3.7.0

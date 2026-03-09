@@ -223,6 +223,22 @@ pytest tests/ -v
 pytest --cov=tools --cov-report=html
 ```
 
+### Workflow de Desarrollo
+
+```bash
+# Instalar dependencias de desarrollo
+make install-dev
+
+# Calidad de código
+make lint
+make format
+make quality
+
+# Pre-commit hooks
+make pre-commit-install
+make pre-commit
+```
+
 ## 🎯 Uso del CLI
 
 El toolkit proporciona un CLI unificado con 6 módulos principales:
@@ -726,7 +742,7 @@ Repositorio personal de herramientas administrativas. Para mejoras o sugerencias
 #### Testing y Calidad
 
 - ✅ **412 Unit Tests** - 411 passed, 1 skipped
-- ✅ **Cloud legacy compatibility** - Tests históricos restaurados
+- ✅ **Cloud tests modernizados** - Sin shims/aliases legacy
 - ✅ **Flake8 Clean** - Zero linting violations
 - ✅ **Type Hints** - Better IDE support and type safety
 
@@ -745,10 +761,10 @@ Repositorio personal de herramientas administrativas. Para mejoras o sugerencias
 - ⏳ **CHANGELOG.md General** - Proyecto-wide changelog
 - ⏳ **Ejemplos de Uso** - 5 example files (cloud, remote, mail, dns, system)
 - ⏳ **API Documentation** - Sphinx/MkDocs auto-generated docs
-- ⏳ **Scripts de Instalación** - install.sh, install.ps1
-- ⏳ **CI/CD** - GitHub Actions workflow for tests
-- ⏳ **Makefile** - Common development tasks
-- ⏳ **Pre-commit Hooks** - Automated quality checks
+- ✅ **Scripts de Instalación** - install.sh, install.ps1
+- ✅ **CI/CD** - GitHub Actions workflow for tests
+- ✅ **Makefile** - Common development tasks
+- ✅ **Pre-commit Hooks** - Automated quality checks
 
 #### Semana 2-3: Módulos Nuevos
 
@@ -800,6 +816,6 @@ MIT License - Ver [LICENSE](LICENSE) para detalles.
 
 ---
 
-**Versión:** 2.7.0  
-**Última actualización:** Marzo 8, 2026  
+**Versión:** 2.7.0
+**Última actualización:** Marzo 8, 2026
 **Estado:** Production-Ready (Base) + Enterprise Extensions (En Progreso)
