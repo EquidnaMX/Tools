@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="tools-admin",
-    version="2.8.0",
+    version="2.9.0",
     author="gruelasjr",
     description="Complete Python toolkit for Linux server administration, audit, and management",
     long_description=long_description,

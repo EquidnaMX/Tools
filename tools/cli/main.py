@@ -14,12 +14,13 @@ from tools.cli.system_commands import system
 from tools.cli.cloud_commands import cloud
 from tools.cli.backup_commands import backup
 from tools.cli.monitoring_commands import monitoring
+from tools.cli.ldap_commands import ldap
 
 logger = get_logger(__name__)
 
 
 @click.group()
-@click.version_option(version="2.8.0", prog_name="tools")
+@click.version_option(version="2.9.0", prog_name="tools")
 @click.option("--config", type=click.Path(), help="Path to config file")
 @click.option(
     "--log-level",
@@ -60,6 +61,7 @@ cli.add_command(system)
 cli.add_command(cloud)
 cli.add_command(backup)
 cli.add_command(monitoring)
+cli.add_command(ldap)
 
 
 @cli.command()

@@ -1,7 +1,7 @@
-# Tools - Admin Toolkit v2.8.0
+# Tools - Admin Toolkit v2.9.0
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-411%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-455%20passing-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -9,11 +9,11 @@ Toolkit profesional de administración de sistemas con CLI unificado para gesti�
 
 **Features principales:**
 
-- 🚀 CLI unificado con 8 módulos integrados
+- 🚀 CLI unificado con 9 módulos integrados
 - ☁️ Multi-cloud storage (AWS, Azure, GCP, DigitalOcean, B2, MinIO)
 - 🔒 Optimizaciones avanzadas (cache, compression, encryption, bandwidth limiting)
 - 🔐 Gestión segura de credenciales con keyring
-- 🧪 435 tests totales (434 passed, 1 skipped)
+- 🧪 455 tests totales (454 passed, 1 skipped)
 - 📦 Arquitectura Python OOP moderna y extensible
 
 ## � Quick Start
@@ -35,13 +35,15 @@ pip install -e .
 tools --help
 tools cloud sync --profile production_backups
 tools remote exec "uptime" --hosts 192.168.1.10
+tools remote exec "uptime" --hosts 192.168.1.10
+tools ldap configure-client --ldap-uri ldap://ldap.example.com --base-dn dc=example,dc=com
 tools mail audit --domain example.com
 ```
 
 ## 📁 Estructura del Proyecto
 
 ```
-Tools/                          # Toolkit completo v2.8.0
+Tools/                          # Toolkit completo v2.9.0
 ├── tools/                      # 🐍 Módulos Python principales
 │   ├── cli/                   # CLI unificado
 │   │   ├── main.py           # Entry point: `tools` or `python -m tools.cli.main`
@@ -49,6 +51,8 @@ Tools/                          # Toolkit completo v2.8.0
 │   │   ├── remote_commands.py # tools remote [exec|upload|scan]
 │   │   ├── mail_commands.py  # tools mail [audit|check-domain|validate-dns]
 │   │   ├── dns_commands.py   # tools dns [check-replication|fix-ns|install]
+│   │   ├── dns_commands.py   # tools dns [check-replication|fix-ns|install]
+│   │   ├── ldap_commands.py  # tools ldap [configure-client|test-connection|generate-config]
 │   │   └── system_commands.py # tools system [timezone|files|pam]
 │   │
 │   ├── core/                  # 🔧 Utilidades compartidas
@@ -104,12 +108,21 @@ Tools/                          # Toolkit completo v2.8.0
 │   │   └── __init__.py
 │   │
 │   ├── monitoring/           # 📊 Monitoreo y alertas
+│   ├── monitoring/           # 📊 Monitoreo y alertas
+│   │   ├── manager.py        # Métricas de sistema, checks HTTP/puerto, alertas
+│   │   └── __init__.py
+│   │
+│   ├── ldap/                 # 🔐 Autenticación LDAP remota
+│   │   ├── client_installer.py # Configuración PAM/NSLCD/SSSD
+│   │   └── __init__.py
 │   │   ├── manager.py        # Métricas de sistema, checks HTTP/puerto, alertas
 │   │   └── __init__.py
 │   │
 │   └── __init__.py           # Package exports
 │
-├── tests/                      # 🧪 Suite de tests (435 tests totales)
+├── tests/                      # 🧪 Suite de tests (455 tests totales)
+│   ├── monitoring/            # Tests monitoring module
+│   ├── ldap/                  # Tests LDAP module
 │   ├── backup/                # Tests backup module│   ├── monitoring/            # Tests monitoring module│   ├── cloud/                 # Tests cloud module
 │   ├── remote/                # Tests remote module
 │   ├── mail/                  # Tests mail module
@@ -655,6 +668,46 @@ tools config show production
 
 # Validar configuración
 tools config validate ~/.tools/cloud_profiles.yml
+tools config validate ~/.tools/cloud_profiles.yml
+```
+
+---
+
+### 9. 🔐 Autenticación LDAP Remota
+
+```bash
+# Configurar cliente LDAP con PAM (modo NSLCD)
+tools ldap configure-client \
+  --ldap-uri ldap://ldap.example.com \
+  --base-dn dc=example,dc=com \
+  -g server-admin \
+  -g desarrollo \
+  --mode nslcd \
+  --dry-run
+
+# Configurar con SSSD y TLS
+tools ldap configure-client \
+  --ldap-uri ldaps://ldap.example.com:636 \
+  --base-dn dc=example,dc=com \
+  --bind-dn cn=admin,dc=example,dc=com \
+  --bind-password secret123 \
+  --mode sssd \
+  --use-tls \
+  --create-homedir
+
+# Generar script bash standalone
+tools ldap configure-client \
+  --ldap-uri ldap://ldap.example.com \
+  --base-dn dc=example,dc=com \
+  --output-script /tmp/configure_ldap.sh
+
+# Probar conexión LDAP
+tools ldap test-connection \
+  --ldap-uri ldap://ldap.example.com \
+  --base-dn dc=example,dc=com
+
+# Generar archivo de configuración YAML
+tools ldap generate-config -o ldap_config.yml
 ```
 
 ## 📖 Documentación Detallada
