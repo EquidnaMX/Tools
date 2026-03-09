@@ -9,6 +9,8 @@ from tools.ldap import (
     LDAPConfig,
     PAMConfig,
     InstallationMode,
+    SudoersManager,
+    SudoersRule,
 )
 
 
@@ -16,6 +18,19 @@ from tools.ldap import (
 def ldap():
     """Comandos de autenticación LDAP."""
     pass
+
+
+def _local_group_installer(dry_run: bool = False) -> LDAPClientInstaller:
+    """Crea instalador local para gestión de grupos PAM."""
+    return LDAPClientInstaller(
+        ldap_config=LDAPConfig(uri="ldap://localhost", base_dn="dc=local,dc=domain"),
+        dry_run=dry_run,
+    )
+
+
+def _sudoers_manager(dry_run: bool = False) -> SudoersManager:
+    """Crea gestor de sudoers."""
+    return SudoersManager(dry_run=dry_run)
 
 
 @ldap.command(name="configure-client")
@@ -340,3 +355,178 @@ def generate_config(output):
     click.secho(f"✓ Configuración generada: {output}", fg="green", bold=True)
     click.echo("\nEdita el archivo y usa con:")
     click.echo(f"  tools ldap configure-from-file -f {output}")
+
+
+@ldap.group(name="groups")
+def groups():
+    """Gestiona grupos LDAP permitidos en PAM (common-auth)."""
+    pass
+
+
+@groups.command(name="list")
+@click.option(
+    "--pam-auth-file",
+    default="/etc/pam.d/common-auth",
+    show_default=True,
+    help="Ruta del archivo common-auth",
+)
+def list_groups(pam_auth_file):
+    """Lista grupos permitidos actualmente."""
+    installer = _local_group_installer(dry_run=False)
+    groups_found = installer.list_allowed_groups(pam_auth_file=pam_auth_file)
+
+    if not groups_found:
+        click.secho("No se encontraron grupos LDAP configurados.", fg="yellow")
+        return
+
+    click.secho("Grupos LDAP permitidos:", fg="green", bold=True)
+    for group in groups_found:
+        click.echo(f"- {group}")
+
+
+@groups.command(name="add")
+@click.argument("group")
+@click.option(
+    "--pam-auth-file",
+    default="/etc/pam.d/common-auth",
+    show_default=True,
+    help="Ruta del archivo common-auth",
+)
+@click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
+def add_group(group, pam_auth_file, dry_run):
+    """Agrega un grupo permitido a common-auth."""
+    installer = _local_group_installer(dry_run=dry_run)
+    ok, message = installer.add_allowed_group(group=group, pam_auth_file=pam_auth_file)
+
+    if ok:
+        click.secho(f"✓ {message}", fg="green", bold=True)
+        return
+
+    click.secho(f"✗ {message}", fg="red", bold=True)
+    raise click.Abort()
+
+
+@groups.command(name="remove")
+@click.argument("group")
+@click.option(
+    "--pam-auth-file",
+    default="/etc/pam.d/common-auth",
+    show_default=True,
+    help="Ruta del archivo common-auth",
+)
+@click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
+def remove_group(group, pam_auth_file, dry_run):
+    """Quita un grupo permitido de common-auth."""
+    installer = _local_group_installer(dry_run=dry_run)
+    ok, message = installer.remove_allowed_group(group=group, pam_auth_file=pam_auth_file)
+
+    if ok:
+        click.secho(f"✓ {message}", fg="green", bold=True)
+        return
+
+    click.secho(f"✗ {message}", fg="red", bold=True)
+    raise click.Abort()
+
+
+@ldap.group(name="sudoers")
+def sudoers():
+    """Gestiona reglas en /etc/sudoers.d para grupos LDAP."""
+    pass
+
+
+@sudoers.command(name="create")
+@click.option("--name", required=True, help="Nombre de archivo en sudoers.d (ej: hela-admin)")
+@click.option("--group", required=True, help="Grupo LDAP (con o sin prefijo %)")
+@click.option("--run-as", default="root", show_default=True, help="Usuarios run-as, ej: root:www-data")
+@click.option("--commands", default="ALL", show_default=True, help="Comandos permitidos/restringidos")
+@click.option(
+    "--sudoers-dir",
+    default="/etc/sudoers.d",
+    show_default=True,
+    help="Directorio sudoers.d destino",
+)
+@click.option("--validate", is_flag=True, help="Validar con visudo antes de escribir")
+@click.option("--visudo-path", default="visudo", show_default=True, help="Ruta/comando visudo")
+@click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
+def create_sudoers_rule(name, group, run_as, commands, sudoers_dir, validate, visudo_path, dry_run):
+    """Crea regla sudoers para un grupo LDAP."""
+    manager = _sudoers_manager(dry_run=dry_run)
+    rule = SudoersRule(group=group, run_as=run_as, commands=commands)
+    ok, message = manager.create_rule_file(
+        file_name=name,
+        rule=rule,
+        sudoers_dir=sudoers_dir,
+        validate=validate,
+        visudo_path=visudo_path,
+    )
+
+    if ok:
+        click.secho(f"✓ {message}", fg="green", bold=True)
+        return
+
+    click.secho(f"✗ {message}", fg="red", bold=True)
+    raise click.Abort()
+
+
+@sudoers.command(name="list")
+@click.option(
+    "--sudoers-dir",
+    default="/etc/sudoers.d",
+    show_default=True,
+    help="Directorio sudoers.d a inspeccionar",
+)
+def list_sudoers_rules(sudoers_dir):
+    """Lista archivos de reglas sudoers existentes."""
+    manager = _sudoers_manager(dry_run=False)
+    files = manager.list_rule_files(sudoers_dir=sudoers_dir)
+
+    if not files:
+        click.secho("No hay reglas en sudoers.d.", fg="yellow")
+        return
+
+    click.secho("Reglas sudoers disponibles:", fg="green", bold=True)
+    for entry in files:
+        click.echo(f"- {entry}")
+
+
+@sudoers.command(name="show")
+@click.argument("name")
+@click.option(
+    "--sudoers-dir",
+    default="/etc/sudoers.d",
+    show_default=True,
+    help="Directorio sudoers.d",
+)
+def show_sudoers_rule(name, sudoers_dir):
+    """Muestra contenido de una regla sudoers."""
+    manager = _sudoers_manager(dry_run=False)
+    ok, message = manager.show_rule_file(file_name=name, sudoers_dir=sudoers_dir)
+
+    if ok:
+        click.echo(message)
+        return
+
+    click.secho(f"✗ {message}", fg="red", bold=True)
+    raise click.Abort()
+
+
+@sudoers.command(name="remove")
+@click.argument("name")
+@click.option(
+    "--sudoers-dir",
+    default="/etc/sudoers.d",
+    show_default=True,
+    help="Directorio sudoers.d",
+)
+@click.option("--dry-run", is_flag=True, help="Simular sin borrar")
+def remove_sudoers_rule(name, sudoers_dir, dry_run):
+    """Elimina una regla sudoers por nombre de archivo."""
+    manager = _sudoers_manager(dry_run=dry_run)
+    ok, message = manager.remove_rule_file(file_name=name, sudoers_dir=sudoers_dir)
+
+    if ok:
+        click.secho(f"✓ {message}", fg="green", bold=True)
+        return
+
+    click.secho(f"✗ {message}", fg="red", bold=True)
+    raise click.Abort()

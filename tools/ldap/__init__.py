@@ -12,6 +12,7 @@ from .client_installer import (
     InstallationResult,
     InstallationMode,
 )
+from .sudoers_manager import SudoersManager, SudoersRule
 
 __all__ = [
     "LDAPClientInstaller",
@@ -19,4 +20,6 @@ __all__ = [
     "PAMConfig",
     "InstallationResult",
     "InstallationMode",
+    "SudoersManager",
+    "SudoersRule",
 ]

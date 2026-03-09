@@ -70,6 +70,10 @@ class LDAPClientInstaller:
         "su": "/etc/pam.d/su",
     }
 
+    GROUP_RULE_PREFIX = "auth    sufficient      pam_succeed_if.so user ingroup "
+    GROUP_BLOCK_START = "# LDAP allowed groups (managed by tools-admin) - start"
+    GROUP_BLOCK_END = "# LDAP allowed groups (managed by tools-admin) - end"
+
     def __init__(
         self,
         ldap_config: LDAPConfig,
@@ -227,12 +231,14 @@ class LDAPClientInstaller:
             "auth    sufficient      pam_unix.so",
             "auth    requisite       pam_ldap.so use_first_pass",
             "",
+            self.GROUP_BLOCK_START,
             "# Solo habilitar acceso si el usuario está en estos grupos LDAP",
         ]
 
         for group in self.pam_config.allowed_groups:
             auth_lines.append(f"auth    sufficient      pam_succeed_if.so user ingroup {group}")
 
+        auth_lines.append(self.GROUP_BLOCK_END)
         auth_lines.append("auth    requisite       pam_deny.so")
         configs["common-auth"] = "\n".join(auth_lines)
 
@@ -272,6 +278,110 @@ session include    common-session
 session optional   pam_mail.so nopen"""
 
         return configs
+
+    def list_allowed_groups(self, pam_auth_file: Optional[str] = None) -> List[str]:
+        """Lista los grupos permitidos actualmente en common-auth."""
+        auth_file = Path(pam_auth_file or self.PAM_FILES["common-auth"])
+
+        if not auth_file.exists():
+            return []
+
+        groups: List[str] = []
+        for line in auth_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith(self.GROUP_RULE_PREFIX):
+                group = line.replace(self.GROUP_RULE_PREFIX, "", 1).strip()
+                if group:
+                    groups.append(group)
+
+        return groups
+
+    def _normalize_groups_block(self, lines: List[str], groups: List[str]) -> List[str]:
+        """Normaliza el bloque de grupos LDAP en common-auth."""
+        ordered_groups = sorted({g.strip() for g in groups if g and g.strip()})
+
+        block_lines = [
+            self.GROUP_BLOCK_START,
+            "# Solo habilitar acceso si el usuario está en estos grupos LDAP",
+        ]
+        for group in ordered_groups:
+            block_lines.append(f"{self.GROUP_RULE_PREFIX}{group}")
+        block_lines.append(self.GROUP_BLOCK_END)
+
+        skip_lines = {
+            self.GROUP_BLOCK_START,
+            self.GROUP_BLOCK_END,
+            "# Solo habilitar acceso si el usuario está en estos grupos LDAP",
+        }
+
+        filtered_lines: List[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped in skip_lines:
+                continue
+            if stripped.startswith(self.GROUP_RULE_PREFIX):
+                continue
+            filtered_lines.append(line)
+
+        insert_at = len(filtered_lines)
+        for i, line in enumerate(filtered_lines):
+            if "pam_deny.so" in line:
+                insert_at = i
+                break
+
+        if insert_at > 0 and filtered_lines[insert_at - 1].strip() != "":
+            block_lines = [""] + block_lines
+
+        return filtered_lines[:insert_at] + block_lines + filtered_lines[insert_at:]
+
+    def add_allowed_group(self, group: str, pam_auth_file: Optional[str] = None) -> Tuple[bool, str]:
+        """Agrega una regla pam_succeed_if para un grupo LDAP."""
+        clean_group = group.strip()
+        if not clean_group:
+            return False, "El nombre del grupo no puede estar vacío"
+
+        auth_file = Path(pam_auth_file or self.PAM_FILES["common-auth"])
+        if not auth_file.exists():
+            return False, f"Archivo no encontrado: {auth_file}"
+
+        lines = auth_file.read_text(encoding="utf-8").splitlines()
+        existing_groups = self.list_allowed_groups(pam_auth_file=str(auth_file))
+
+        if clean_group in existing_groups:
+            return False, f"El grupo '{clean_group}' ya existe"
+
+        new_lines = self._normalize_groups_block(lines, existing_groups + [clean_group])
+
+        if self.dry_run:
+            return True, f"[DRY-RUN] Se agregaría el grupo '{clean_group}'"
+
+        auth_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        return True, f"Grupo agregado: {clean_group}"
+
+    def remove_allowed_group(self, group: str, pam_auth_file: Optional[str] = None) -> Tuple[bool, str]:
+        """Elimina una regla pam_succeed_if para un grupo LDAP."""
+        clean_group = group.strip()
+        if not clean_group:
+            return False, "El nombre del grupo no puede estar vacío"
+
+        auth_file = Path(pam_auth_file or self.PAM_FILES["common-auth"])
+        if not auth_file.exists():
+            return False, f"Archivo no encontrado: {auth_file}"
+
+        lines = auth_file.read_text(encoding="utf-8").splitlines()
+        existing_groups = self.list_allowed_groups(pam_auth_file=str(auth_file))
+
+        if clean_group not in existing_groups:
+            return False, f"El grupo '{clean_group}' no existe"
+
+        remaining_groups = [g for g in existing_groups if g != clean_group]
+        new_lines = self._normalize_groups_block(lines, remaining_groups)
+
+        if self.dry_run:
+            return True, f"[DRY-RUN] Se quitaría el grupo '{clean_group}'"
+
+        auth_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        return True, f"Grupo eliminado: {clean_group}"
 
     def _configure_nsswitch(self) -> bool:
         """Configura NSSwitch para usar LDAP."""

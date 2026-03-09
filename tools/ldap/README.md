@@ -118,6 +118,67 @@ vim ldap_config.yml
 tools ldap configure-client --config ldap_config.yml
 ```
 
+### 7. Revisar, Agregar y Quitar Grupos Permitidos
+
+Estos comandos operan sobre `/etc/pam.d/common-auth` y permiten administrar reglas como:
+
+auth    sufficient      pam_succeed_if.so user ingroup server-admin
+auth    sufficient      pam_succeed_if.so user ingroup desarrollo
+
+```bash
+# Listar grupos permitidos actuales
+tools ldap groups list
+
+# Agregar un grupo
+tools ldap groups add devops
+
+# Quitar un grupo
+tools ldap groups remove desarrollo
+
+# Simular cambios sin escribir
+tools ldap groups add qa --dry-run
+
+# Usar un archivo alterno (útil para pruebas)
+tools ldap groups list --pam-auth-file ./common-auth
+```
+
+### 8. Reglas Sudo Complementarias (sudoers.d)
+
+Para otorgar permisos de sudo a grupos LDAP con archivos dedicados en `/etc/sudoers.d`:
+
+```bash
+# Crear regla tipo hela-admin
+tools ldap sudoers create \
+  --name hela-admin \
+  --group hela-admin \
+  --run-as root:www-data \
+  --commands "ALL, !/usr/bin/passwd" \
+  --validate
+
+# Listar reglas existentes
+tools ldap sudoers list
+
+# Ver contenido de una regla
+tools ldap sudoers show hela-admin
+
+# Eliminar regla
+tools ldap sudoers remove hela-admin
+
+# Simular creación sin escribir
+tools ldap sudoers create \
+  --name hela-admin \
+  --group hela-admin \
+  --run-as root:www-data \
+  --commands "ALL, !/usr/bin/passwd" \
+  --dry-run
+```
+
+Ejemplo de salida esperada del archivo:
+
+```
+%hela-admin ALL=(root:www-data) ALL, !/usr/bin/passwd
+```
+
 ## 🔧 Opciones Avanzadas
 
 ### Todas las Opciones de configure-client

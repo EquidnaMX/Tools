@@ -196,3 +196,115 @@ class TestLDAPClientInstaller:
         assert "developers" in auth_config
         assert "operators" in auth_config
         assert "readonly" in auth_config
+
+    def test_list_allowed_groups_from_common_auth(self, tmp_path):
+        """Test listar grupos desde archivo common-auth."""
+        common_auth = tmp_path / "common-auth"
+        common_auth.write_text(
+            "\n".join(
+                [
+                    "auth    sufficient      pam_unix.so",
+                    "auth    sufficient      pam_succeed_if.so user ingroup admins",
+                    "auth    sufficient      pam_succeed_if.so user ingroup desarrollo",
+                    "auth    requisite       pam_deny.so",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        installer = LDAPClientInstaller(
+            ldap_config=LDAPConfig(uri="ldap://ldap.example.com", base_dn="dc=example,dc=com"),
+            dry_run=False,
+        )
+
+        groups = installer.list_allowed_groups(pam_auth_file=str(common_auth))
+        assert groups == ["admins", "desarrollo"]
+
+    def test_add_allowed_group_updates_file(self, tmp_path):
+        """Test agregar grupo en common-auth."""
+        common_auth = tmp_path / "common-auth"
+        common_auth.write_text(
+            "\n".join(
+                [
+                    "auth    sufficient      pam_unix.so",
+                    "auth    sufficient      pam_succeed_if.so user ingroup admins",
+                    "auth    requisite       pam_deny.so",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        installer = LDAPClientInstaller(
+            ldap_config=LDAPConfig(uri="ldap://ldap.example.com", base_dn="dc=example,dc=com"),
+            dry_run=False,
+        )
+
+        ok, _ = installer.add_allowed_group("desarrollo", pam_auth_file=str(common_auth))
+        assert ok is True
+
+        content = common_auth.read_text(encoding="utf-8")
+        assert "ingroup admins" in content
+        assert "ingroup desarrollo" in content
+
+    def test_add_group_normalizes_block_and_order(self, tmp_path):
+        """Test que add normaliza bloque y ordena grupos."""
+        common_auth = tmp_path / "common-auth"
+        common_auth.write_text(
+            "\n".join(
+                [
+                    "auth    sufficient      pam_unix.so",
+                    "auth    sufficient      pam_succeed_if.so user ingroup zeta",
+                    "auth    sufficient      pam_succeed_if.so user ingroup alpha",
+                    "auth    requisite       pam_deny.so",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        installer = LDAPClientInstaller(
+            ldap_config=LDAPConfig(uri="ldap://ldap.example.com", base_dn="dc=example,dc=com"),
+            dry_run=False,
+        )
+
+        ok, _ = installer.add_allowed_group("beta", pam_auth_file=str(common_auth))
+        assert ok is True
+
+        content = common_auth.read_text(encoding="utf-8")
+        assert installer.GROUP_BLOCK_START in content
+        assert installer.GROUP_BLOCK_END in content
+
+        alpha_pos = content.find("ingroup alpha")
+        beta_pos = content.find("ingroup beta")
+        zeta_pos = content.find("ingroup zeta")
+        assert alpha_pos < beta_pos < zeta_pos
+
+    def test_remove_allowed_group_updates_file(self, tmp_path):
+        """Test quitar grupo en common-auth."""
+        common_auth = tmp_path / "common-auth"
+        common_auth.write_text(
+            "\n".join(
+                [
+                    "auth    sufficient      pam_unix.so",
+                    "auth    sufficient      pam_succeed_if.so user ingroup admins",
+                    "auth    sufficient      pam_succeed_if.so user ingroup desarrollo",
+                    "auth    requisite       pam_deny.so",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        installer = LDAPClientInstaller(
+            ldap_config=LDAPConfig(uri="ldap://ldap.example.com", base_dn="dc=example,dc=com"),
+            dry_run=False,
+        )
+
+        ok, _ = installer.remove_allowed_group("admins", pam_auth_file=str(common_auth))
+        assert ok is True
+
+        content = common_auth.read_text(encoding="utf-8")
+        assert "ingroup admins" not in content
+        assert "ingroup desarrollo" in content

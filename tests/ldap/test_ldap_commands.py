@@ -19,6 +19,7 @@ class TestLDAPCommands:
         assert "configure-client" in result.output
         assert "test-connection" in result.output
         assert "generate-config" in result.output
+        assert "sudoers" in result.output
 
     def test_configure_client_dry_run(self):
         """Test comando configure-client en modo dry-run."""
@@ -181,3 +182,131 @@ class TestLDAPCommands:
 
         assert result.exit_code != 0
         assert "Missing option" in result.output or "required" in result.output.lower()
+
+    def test_groups_list(self, tmp_path):
+        """Test listar grupos LDAP de common-auth."""
+        common_auth = tmp_path / "common-auth"
+        common_auth.write_text(
+            "\n".join(
+                [
+                    "auth    sufficient      pam_unix.so",
+                    "auth    sufficient      pam_succeed_if.so user ingroup server-admin",
+                    "auth    sufficient      pam_succeed_if.so user ingroup desarrollo",
+                    "auth    requisite       pam_deny.so",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            ["groups", "list", "--pam-auth-file", str(common_auth)],
+        )
+
+        assert result.exit_code == 0
+        assert "server-admin" in result.output
+        assert "desarrollo" in result.output
+
+    def test_groups_add(self, tmp_path):
+        """Test agregar grupo LDAP por CLI."""
+        common_auth = tmp_path / "common-auth"
+        common_auth.write_text(
+            "\n".join(
+                [
+                    "auth    sufficient      pam_unix.so",
+                    "auth    sufficient      pam_succeed_if.so user ingroup server-admin",
+                    "auth    requisite       pam_deny.so",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            ["groups", "add", "desarrollo", "--pam-auth-file", str(common_auth)],
+        )
+
+        assert result.exit_code == 0
+        content = common_auth.read_text(encoding="utf-8")
+        assert "ingroup desarrollo" in content
+
+    def test_groups_remove(self, tmp_path):
+        """Test quitar grupo LDAP por CLI."""
+        common_auth = tmp_path / "common-auth"
+        common_auth.write_text(
+            "\n".join(
+                [
+                    "auth    sufficient      pam_unix.so",
+                    "auth    sufficient      pam_succeed_if.so user ingroup server-admin",
+                    "auth    sufficient      pam_succeed_if.so user ingroup desarrollo",
+                    "auth    requisite       pam_deny.so",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            ["groups", "remove", "desarrollo", "--pam-auth-file", str(common_auth)],
+        )
+
+        assert result.exit_code == 0
+        content = common_auth.read_text(encoding="utf-8")
+        assert "ingroup desarrollo" not in content
+
+    def test_sudoers_create(self, tmp_path):
+        """Test crear regla sudoers por CLI."""
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            [
+                "sudoers",
+                "create",
+                "--name",
+                "hela-admin",
+                "--group",
+                "hela-admin",
+                "--run-as",
+                "root:www-data",
+                "--commands",
+                "ALL, !/usr/bin/passwd",
+                "--sudoers-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        content = (tmp_path / "hela-admin").read_text(encoding="utf-8")
+        assert "%hela-admin ALL=(root:www-data) ALL, !/usr/bin/passwd" in content
+
+    def test_sudoers_list(self, tmp_path):
+        """Test listar reglas sudoers por CLI."""
+        (tmp_path / "hela-admin").write_text("%hela-admin ALL=(root) ALL\n", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            ["sudoers", "list", "--sudoers-dir", str(tmp_path)],
+        )
+
+        assert result.exit_code == 0
+        assert "hela-admin" in result.output
+
+    def test_sudoers_remove(self, tmp_path):
+        """Test eliminar regla sudoers por CLI."""
+        (tmp_path / "hela-admin").write_text("%hela-admin ALL=(root) ALL\n", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            ["sudoers", "remove", "hela-admin", "--sudoers-dir", str(tmp_path)],
+        )
+
+        assert result.exit_code == 0
+        assert not (tmp_path / "hela-admin").exists()
