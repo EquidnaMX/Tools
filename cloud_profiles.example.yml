@@ -1,0 +1,147 @@
+# Example configuration profiles for tools cloud sync
+# Save this file in one of the following locations:
+#   - ./.tools/cloud_profiles.yml (project directory)
+#   - ~/.tools/cloud_profiles.yml (user home)
+#   - ~/.config/tools/cloud_profiles.yml (XDG config directory)
+#
+# Then use with: tools cloud sync --profile <name>
+
+# Production backups profile
+production_backups:
+  description: "Production database and media backups"
+  region: sfo3
+  bucket: prod-backups
+  dest: ~/backups/production
+  prefix: daily/
+  workers: 24
+  delete: false
+  dry_run: false
+  exclude:
+    - "*.tmp"
+    - "*.log"
+    - ".DS_Store"
+  show_progress: true
+  log_level: INFO
+
+# Development sync profile
+dev_sync:
+  description: "Development environment sync"
+  region: nyc3
+  bucket: dev-storage
+  dest: ./dev-data
+  workers: 16
+  delete: true # Mirror mode: delete local files not in remote
+  dry_run: false
+  show_progress: true
+  log_level: DEBUG
+
+# Media assets download
+media_assets:
+  description: "Download large media files"
+  region: ams3
+  bucket: media-cdn
+  dest: ~/media-cache
+  prefix: assets/images/
+  workers: 32
+  delete: false
+  exclude:
+    - "*.webp" # Skip WebP files
+    - "thumbnails/*"
+  show_progress: true
+  log_level: INFO
+  output_json: media_sync_report.json
+  detailed_report: true
+
+# Weekly archives (dry run first)
+weekly_archives_dryrun:
+  description: "Weekly archives (dry run mode)"
+  region: fra1
+  bucket: archives
+  dest: ~/archives/weekly
+  prefix: 2024/
+  workers: 16
+  delete: true
+  dry_run: true # Simulate only, no actual downloads
+  show_progress: true
+  log_level: INFO
+
+# Complete production mirror
+prod_mirror:
+  description: "Complete production environment mirror"
+  region: sgp1
+  bucket: prod-data
+  dest: /mnt/backup/prod-mirror
+  workers: 48
+  delete: true # Keep exact mirror
+  exclude:
+    - "cache/*"
+    - "*.tmp"
+    - "temp/*"
+  show_progress: false # Disable progress bars for automated runs
+  log_level: WARNING
+  output_json: /var/log/prod-mirror-sync.json
+  detailed_report: false
+
+# =============================================================================
+# UPLOAD PROFILES
+# Use with: tools cloud upload <source> --profile <name>
+# =============================================================================
+
+# Production uploads (private)
+production_uploads:
+  description: "Upload backups to production bucket"
+  region: sfo3
+  bucket: prod-backups
+  dest: backups/incremental/
+  workers: 16
+  dry_run: false
+  acl: private # Files are private by default
+  exclude:
+    - "*.swp"
+    - ".DS_Store"
+    - "Thumbs.db"
+  show_progress: true
+  log_level: INFO
+
+# Website static assets (public)
+web_assets:
+  description: "Upload website static assets (CSS, JS, images)"
+  region: nyc3
+  bucket: website-cdn
+  dest: assets/v2/
+  workers: 20
+  acl: public-read # Public access for CDN
+  exclude:
+    - "*.map" # Skip source maps
+    - "node_modules/*"
+    - ".git/*"
+  show_progress: true
+  log_level: INFO
+  output_json: upload_assets_report.json
+
+# Document uploads
+doc_uploads:
+  description: "Upload documents to archive"
+  region: nyc3
+  bucket: docs-archive
+  dest: documents/2024/
+  workers: 12
+  acl: private
+  content_type: application/pdf # Force specific content type
+  show_progress: true
+  log_level: INFO
+
+# Development uploads
+dev_uploads:
+  description: "Development uploads (dry-run enabled)"
+  region: nyc3
+  bucket: dev-storage
+  dest: uploads/
+  workers: 8
+  dry_run: true # Safe mode: simulate uploads first
+  exclude:
+    - "*.tmp"
+    - ".git/*"
+    - "__pycache__/*"
+  show_progress: true
+  log_level: DEBUG
