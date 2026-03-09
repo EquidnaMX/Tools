@@ -4,8 +4,8 @@ Documentación del sistema de testing del proyecto.
 
 ## 📊 Cobertura Actual
 
-- **Total de Tests:** 412 totales
-- **Ultima ejecucion completa:** 411 passed, 1 skipped
+- **Total de Tests:** 417 totales
+- **Ultima ejecucion completa:** 416 passed, 1 skipped
 - **Cobertura Global:** 43% (3321 líneas sin cubrir de 5870)
 - **Framework:** pytest 7.4.3
 - **Plugins:** pytest-cov, pytest-mock, pytest-asyncio
@@ -62,7 +62,10 @@ Documentación del sistema de testing del proyecto.
 
 ```
 tests/
-├── cloud/           # Cloud storage providers (incluye tests legacy compatibles)
+├── backup/          # Backup module
+│   ├── test_backup_commands.py
+│   └── test_backup_manager.py
+├── cloud/           # Cloud storage providers
 │   ├── test_cloud_providers.py
 │   ├── test_config_manager.py
 │   ├── test_digitalocean_sync.py
@@ -318,8 +321,8 @@ def test_api_call():
 
 ### Completado ✅
 
-- [x] 412 tests definidos en la suite
-- [x] 411 tests pasando en la ultima ejecucion completa
+- [x] 417 tests definidos en la suite
+- [x] 416 tests pasando en la ultima ejecucion completa
 - [x] Tests organizados por módulo
 - [x] Configuración pytest completa
 - [x] Fixtures para datos de prueba
@@ -391,6 +394,6 @@ pytest tests/cloud/test_cloud_providers.py::test_flaky -x --count=10
 ---
 
 **Última actualización:** Marzo 9, 2026  
-**Total tests:** 412 (ultima corrida: 411 passed, 1 skipped)  
+**Total tests:** 417 (ultima corrida: 416 passed, 1 skipped)  
 **Framework:** pytest 7.4.3  
 **Status:** ✅ Suite completa ejecutable, ⏳ Cobertura en verificacion

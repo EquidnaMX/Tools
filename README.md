@@ -9,11 +9,11 @@ Toolkit profesional de administración de sistemas con CLI unificado para gesti�
 
 **Features principales:**
 
-- 🚀 CLI unificado con 6 módulos integrados
+- 🚀 CLI unificado con 7 módulos integrados
 - ☁️ Multi-cloud storage (AWS, Azure, GCP, DigitalOcean, B2, MinIO)
 - 🔒 Optimizaciones avanzadas (cache, compression, encryption, bandwidth limiting)
 - 🔐 Gestión segura de credenciales con keyring
-- 🧪 412 tests totales (411 passed, 1 skipped)
+- 🧪 417 tests totales (416 passed, 1 skipped)
 - 📦 Arquitectura Python OOP moderna y extensible
 
 ## � Quick Start
@@ -99,9 +99,14 @@ Tools/                          # Toolkit completo v2.7.0
 │   │   ├── pam_manager.py    # PAM configuration management
 │   │   └── README.md         # Documentación completa
 │   │
+│   ├── backup/               # 💾 Backups locales con rotación
+│   │   ├── manager.py        # Creación, restore y políticas de retención
+│   │   └── __init__.py
+│   │
 │   └── __init__.py           # Package exports
 │
-├── tests/                      # 🧪 Suite de tests (412 tests totales)
+├── tests/                      # 🧪 Suite de tests (417 tests totales)
+│   ├── backup/                # Tests backup module
 │   ├── cloud/                 # Tests cloud module
 │   ├── remote/                # Tests remote module
 │   ├── mail/                  # Tests mail module
@@ -241,7 +246,7 @@ make pre-commit
 
 ## 🎯 Uso del CLI
 
-El toolkit proporciona un CLI unificado con 6 módulos principales:
+El toolkit proporciona un CLI unificado con 7 módulos principales:
 
 ### 1. ☁️ Cloud Storage (Multi-Provider)
 
@@ -597,7 +602,25 @@ Ver documentación completa: [tools/system/README.md](tools/system/README.md)
 
 ---
 
-### 6. ⚙️ Configuration Management
+### 6. 💾 Backup con Rotación
+
+```bash
+# Crear backup y mantener solo los 7 más nuevos
+tools backup create ./data --backup-dir ./backups --name daily --keep 7
+
+# Listar backups
+tools backup list --backup-dir ./backups --prefix daily
+
+# Aplicar rotación explícita
+tools backup rotate --backup-dir ./backups --prefix daily --keep 7
+
+# Restaurar backup
+tools backup restore ./backups/daily_20260309_120000_000001.tar.gz --destination ./restore --overwrite
+```
+
+---
+
+### 7. ⚙️ Configuration Management
 
 ```bash
 # Listar perfiles disponibles
@@ -692,7 +715,7 @@ tools config validate ~/.tools/cloud_profiles.yml
 
 ### 📊 Testing y Calidad
 
-- ✅ **412 tests totales** (411 passed, 1 skipped)
+- ✅ **417 tests totales** (416 passed, 1 skipped)
 - ✅ **Compatibilidad cloud retroactiva** para imports y APIs legacy
 - ✅ **Flake8 clean** (0 violations)
 - ✅ **Type hints** en funciones críticas
@@ -723,7 +746,7 @@ Repositorio personal de herramientas administrativas. Para mejoras o sugerencias
 
 #### Módulos Core
 
-- ✅ **CLI Unificado** - 6 módulos principales integrados
+- ✅ **CLI Unificado** - 7 módulos principales integrados
 - ✅ **Cloud Storage** - Multi-provider con 6 clouds soportados
 - ✅ **Remote Management** - SSH execution, file distribution, network scanning
 - ✅ **Mail Auditing** - Domain validation, DNS checks, health monitoring
@@ -741,7 +764,7 @@ Repositorio personal de herramientas administrativas. Para mejoras o sugerencias
 
 #### Testing y Calidad
 
-- ✅ **412 Unit Tests** - 411 passed, 1 skipped
+- ✅ **417 Unit Tests** - 416 passed, 1 skipped
 - ✅ **Cloud tests modernizados** - Sin shims/aliases legacy
 - ✅ **Flake8 Clean** - Zero linting violations
 - ✅ **Type Hints** - Better IDE support and type safety

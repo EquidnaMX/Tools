@@ -12,6 +12,7 @@ from tools.cli.mail_commands import mail
 from tools.cli.dns_commands import dns
 from tools.cli.system_commands import system
 from tools.cli.cloud_commands import cloud
+from tools.cli.backup_commands import backup
 
 logger = get_logger(__name__)
 
@@ -56,6 +57,7 @@ cli.add_command(mail)
 cli.add_command(dns)
 cli.add_command(system)
 cli.add_command(cloud)
+cli.add_command(backup)
 
 
 @cli.command()
