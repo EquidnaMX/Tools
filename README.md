@@ -110,11 +110,11 @@ Tools/                          # Toolkit completo v2.7.0
 │   └── __init__.py
 │
 ├── examples/                   # 📚 Ejemplos de uso
-│   ├── cloud_examples.py      # Ejemplos cloud storage
-│   ├── remote_examples.py     # Ejemplos remote management
-│   ├── mail_examples.py       # Ejemplos mail auditing
-│   ├── dns_examples.py        # Ejemplos DNS management
-│   └── system_examples.py     # Ejemplos system utilities
+│   ├── cloud.py               # Ejemplos cloud storage
+│   ├── remote.py              # Ejemplos remote management
+│   ├── mail.py                # Ejemplos mail auditing
+│   ├── dns.py                 # Ejemplos DNS management
+│   └── system.py              # Ejemplos system utilities
 │
 ├── scripts/                    # 🛠️ Scripts auxiliares
 │   ├── install.sh            # Script de instalación Linux/Mac

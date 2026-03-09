@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="tools-admin",
-    version="0.1.0",
+    version="2.7.0",
     author="gruelasjr",
     description="Complete Python toolkit for Linux server administration, audit, and management",
     long_description=long_description,
@@ -14,15 +14,17 @@ setup(
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "License :: OSI Approved :: MIT License",
         "Operating System :: POSIX :: Linux",
         "Development Status :: 3 - Alpha",
         "Intended Audience :: System Administrators",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.8",
     install_requires=[
         "click>=8.1.0",
         "paramiko>=2.12.0",
@@ -30,7 +32,6 @@ setup(
         "requests>=2.28.0",
         "pyyaml>=6.0",
         "tqdm>=4.65.0",
-        "pathlib>=1.0.1",
     ],
     entry_points={
         "console_scripts": [

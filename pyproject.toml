@@ -2,22 +2,6 @@
 requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[project]
-name = "tools-admin"
-version = "0.1.0"
-description = "Complete Python toolkit for Linux server administration and auditing"
-requires-python = ">=3.9"
-authors = [
-    {name = "gruelasjr", email = "gruelas@ometra.mx"},
-]
-license = {text = "MIT"}
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]
-addopts = "-v --tb=short --cov=tools --cov-report=term-missing"
-xfail_strict = true
-
 [tool.coverage.run]
 source = ["tools"]
 omit = ["*/tests/*", "*/__init__.py"]

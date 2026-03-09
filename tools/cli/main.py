@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="tools")
+@click.version_option(version="2.7.0", prog_name="tools")
 @click.option("--config", type=click.Path(), help="Path to config file")
 @click.option(
     "--log-level",
