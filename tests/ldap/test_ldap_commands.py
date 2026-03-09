@@ -5,6 +5,7 @@ Tests para comandos CLI de LDAP.
 from click.testing import CliRunner
 from tools.cli.ldap_commands import ldap
 import os
+import yaml
 
 
 class TestLDAPCommands:
@@ -310,3 +311,58 @@ class TestLDAPCommands:
 
         assert result.exit_code == 0
         assert not (tmp_path / "hela-admin").exists()
+
+    def test_sudoers_generate_template(self, tmp_path):
+        """Test generar template YAML de sudoers."""
+        output = tmp_path / "sudoers_template.yml"
+
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            ["sudoers", "generate-template", "--output", str(output)],
+        )
+
+        assert result.exit_code == 0
+        assert output.exists()
+
+        payload = yaml.safe_load(output.read_text(encoding="utf-8"))
+        assert "sudoers_rules" in payload
+        assert len(payload["sudoers_rules"]) >= 1
+
+    def test_sudoers_apply_file(self, tmp_path):
+        """Test aplicar reglas sudoers desde YAML."""
+        config_file = tmp_path / "sudoers.yml"
+        payload = {
+            "sudoers_rules": [
+                {
+                    "name": "hela-admin",
+                    "group": "hela-admin",
+                    "run_as": "root:www-data",
+                    "commands": "ALL, !/usr/bin/passwd",
+                },
+                {
+                    "name": "devops-readonly",
+                    "group": "devops",
+                    "run_as": "root",
+                    "commands": "/usr/bin/systemctl status *",
+                },
+            ]
+        }
+        config_file.write_text(yaml.dump(payload, sort_keys=False), encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            ldap,
+            [
+                "sudoers",
+                "apply-file",
+                "--file",
+                str(config_file),
+                "--sudoers-dir",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert (tmp_path / "hela-admin").exists()
+        assert (tmp_path / "devops-readonly").exists()

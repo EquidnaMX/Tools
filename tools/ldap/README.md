@@ -179,6 +179,44 @@ Ejemplo de salida esperada del archivo:
 %hela-admin ALL=(root:www-data) ALL, !/usr/bin/passwd
 ```
 
+### 9. Aplicación Masiva de Reglas Sudoers desde YAML
+
+Generar plantilla:
+
+```bash
+tools ldap sudoers generate-template --output ldap_sudoers.yml
+```
+
+Formato esperado:
+
+```yaml
+sudoers_rules:
+  - name: hela-admin
+    group: hela-admin
+    run_as: root:www-data
+    commands: ALL, !/usr/bin/passwd
+  - name: devops-readonly
+    group: devops
+    run_as: root
+    commands: /usr/bin/systemctl status *, /usr/bin/journalctl *
+```
+
+Aplicar en lote:
+
+```bash
+tools ldap sudoers apply-file --file ldap_sudoers.yml --validate
+```
+
+Opciones útiles:
+
+```bash
+# Simular sin escribir
+tools ldap sudoers apply-file --file ldap_sudoers.yml --dry-run
+
+# Directorio alterno (pruebas)
+tools ldap sudoers apply-file --file ldap_sudoers.yml --sudoers-dir ./sudoers.d
+```
+
 ## 🔧 Opciones Avanzadas
 
 ### Todas las Opciones de configure-client

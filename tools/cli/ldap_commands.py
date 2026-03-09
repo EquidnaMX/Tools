@@ -530,3 +530,97 @@ def remove_sudoers_rule(name, sudoers_dir, dry_run):
 
     click.secho(f"✗ {message}", fg="red", bold=True)
     raise click.Abort()
+
+
+@sudoers.command(name="apply-file")
+@click.option("--file", "config_file", required=True, type=click.Path(exists=True), help="Archivo YAML de reglas")
+@click.option(
+    "--sudoers-dir",
+    default="/etc/sudoers.d",
+    show_default=True,
+    help="Directorio sudoers.d destino",
+)
+@click.option("--validate", is_flag=True, help="Validar cada regla con visudo")
+@click.option("--visudo-path", default="visudo", show_default=True, help="Ruta/comando visudo")
+@click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
+def apply_sudoers_file(config_file, sudoers_dir, validate, visudo_path, dry_run):
+    """Aplica múltiples reglas sudoers desde un archivo YAML."""
+    import yaml
+
+    with open(config_file, "r", encoding="utf-8") as f:
+        payload = yaml.safe_load(f) or {}
+
+    rules = payload.get("sudoers_rules", [])
+    if not isinstance(rules, list) or not rules:
+        click.secho("✗ El archivo no contiene 'sudoers_rules' válidas.", fg="red", bold=True)
+        raise click.Abort()
+
+    manager = _sudoers_manager(dry_run=dry_run)
+    created = 0
+    failed = 0
+
+    for item in rules:
+        name = item.get("name")
+        group = item.get("group")
+        run_as = item.get("run_as", "root")
+        commands = item.get("commands", "ALL")
+
+        if not name or not group:
+            failed += 1
+            click.secho("✗ Regla inválida: se requiere 'name' y 'group'", fg="red")
+            continue
+
+        rule = SudoersRule(group=group, run_as=run_as, commands=commands)
+        ok, message = manager.create_rule_file(
+            file_name=name,
+            rule=rule,
+            sudoers_dir=sudoers_dir,
+            validate=validate,
+            visudo_path=visudo_path,
+        )
+
+        if ok:
+            created += 1
+            click.secho(f"✓ {name}: {message}", fg="green")
+        else:
+            failed += 1
+            click.secho(f"✗ {name}: {message}", fg="red")
+
+    click.echo("\nResumen:")
+    click.echo(f"  Reglas procesadas: {len(rules)}")
+    click.echo(f"  Exitosas: {created}")
+    click.echo(f"  Fallidas: {failed}")
+
+    if failed > 0:
+        raise click.Abort()
+
+
+@sudoers.command(name="generate-template")
+@click.option("--output", "output_file", default="ldap_sudoers.yml", show_default=True, help="Archivo YAML de salida")
+def generate_sudoers_template(output_file):
+    """Genera plantilla YAML para reglas sudoers en lote."""
+    import yaml
+
+    payload = {
+        "sudoers_rules": [
+            {
+                "name": "hela-admin",
+                "group": "hela-admin",
+                "run_as": "root:www-data",
+                "commands": "ALL, !/usr/bin/passwd",
+            },
+            {
+                "name": "devops-readonly",
+                "group": "devops",
+                "run_as": "root",
+                "commands": "/usr/bin/systemctl status *, /usr/bin/journalctl *",
+            },
+        ]
+    }
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(payload, f, default_flow_style=False, sort_keys=False)
+
+    click.secho(f"✓ Plantilla generada: {output_file}", fg="green", bold=True)
+    click.echo("\nAplicar con:")
+    click.echo(f"  tools ldap sudoers apply-file --file {output_file} --validate")
