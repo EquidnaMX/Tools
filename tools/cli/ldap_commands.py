@@ -172,16 +172,27 @@ def configure_client(
     # Generar script o instalar
     if output_script:
         click.echo(f"Generando script: {output_script}")
-        script_content = installer.generate_script()
-
-        with open(output_script, "w") as f:
-            f.write(script_content)
+        try:
+            script_content = installer.generate_script()
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
 
         import os
-        os.chmod(output_script, 0o755)
+        import tempfile
+
+        target = Path(output_script)
+        fd, staged = tempfile.mkstemp(prefix=".tools-ldap-", dir=str(target.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+                stream.write(script_content)
+            os.chmod(staged, 0o700)
+            os.replace(staged, target)
+        finally:
+            if os.path.exists(staged):
+                os.unlink(staged)
 
         click.secho(f"✓ Script generado: {output_script}", fg="green", bold=True)
-        click.echo(f"\nPara ejecutar:")
+        click.echo("\nPara ejecutar:")
         click.echo(f"  sudo ./{output_script}")
         return
 
@@ -201,9 +212,9 @@ def configure_client(
     click.echo("\n" + "=" * 60)
 
     if result.success:
-        click.secho("✓ Instalación completada exitosamente", fg="green", bold=True)
+        click.secho("✓ Plan validado (dry-run); no se aplicaron cambios", fg="green", bold=True)
     else:
-        click.secho("✗ Instalación falló", fg="red", bold=True)
+        raise click.ClickException(result.message)
 
     click.echo(f"\nMensaje: {result.message}")
 
@@ -359,21 +370,24 @@ def generate_config(output):
 
 @ldap.group(name="groups")
 def groups():
-    """Gestiona grupos LDAP permitidos en PAM (common-auth)."""
+    """Gestiona grupos LDAP permitidos en PAM (common-account)."""
     pass
 
 
 @groups.command(name="list")
 @click.option(
-    "--pam-auth-file",
-    default="/etc/pam.d/common-auth",
+    "--pam-account-file",
+    default="/etc/pam.d/common-account",
     show_default=True,
-    help="Ruta del archivo common-auth",
+    help="Ruta del archivo common-account",
 )
-def list_groups(pam_auth_file):
+def list_groups(pam_account_file):
     """Lista grupos permitidos actualmente."""
     installer = _local_group_installer(dry_run=False)
-    groups_found = installer.list_allowed_groups(pam_auth_file=pam_auth_file)
+    try:
+        groups_found = installer.list_allowed_groups(pam_account_file=pam_account_file)
+    except (ValueError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
 
     if not groups_found:
         click.secho("No se encontraron grupos LDAP configurados.", fg="yellow")
@@ -387,16 +401,16 @@ def list_groups(pam_auth_file):
 @groups.command(name="add")
 @click.argument("group")
 @click.option(
-    "--pam-auth-file",
-    default="/etc/pam.d/common-auth",
+    "--pam-account-file",
+    default="/etc/pam.d/common-account",
     show_default=True,
-    help="Ruta del archivo common-auth",
+    help="Ruta del archivo common-account",
 )
 @click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
-def add_group(group, pam_auth_file, dry_run):
-    """Agrega un grupo permitido a common-auth."""
+def add_group(group, pam_account_file, dry_run):
+    """Agrega un grupo permitido a common-account."""
     installer = _local_group_installer(dry_run=dry_run)
-    ok, message = installer.add_allowed_group(group=group, pam_auth_file=pam_auth_file)
+    ok, message = installer.add_allowed_group(group=group, pam_account_file=pam_account_file)
 
     if ok:
         click.secho(f"✓ {message}", fg="green", bold=True)
@@ -409,16 +423,16 @@ def add_group(group, pam_auth_file, dry_run):
 @groups.command(name="remove")
 @click.argument("group")
 @click.option(
-    "--pam-auth-file",
-    default="/etc/pam.d/common-auth",
+    "--pam-account-file",
+    default="/etc/pam.d/common-account",
     show_default=True,
-    help="Ruta del archivo common-auth",
+    help="Ruta del archivo common-account",
 )
 @click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
-def remove_group(group, pam_auth_file, dry_run):
-    """Quita un grupo permitido de common-auth."""
+def remove_group(group, pam_account_file, dry_run):
+    """Quita un grupo permitido de common-account."""
     installer = _local_group_installer(dry_run=dry_run)
-    ok, message = installer.remove_allowed_group(group=group, pam_auth_file=pam_auth_file)
+    ok, message = installer.remove_allowed_group(group=group, pam_account_file=pam_account_file)
 
     if ok:
         click.secho(f"✓ {message}", fg="green", bold=True)
@@ -445,7 +459,7 @@ def sudoers():
     show_default=True,
     help="Directorio sudoers.d destino",
 )
-@click.option("--validate", is_flag=True, help="Validar con visudo antes de escribir")
+@click.option("--validate", is_flag=True, default=True, help="Validación obligatoria con visudo antes de escribir")
 @click.option("--visudo-path", default="visudo", show_default=True, help="Ruta/comando visudo")
 @click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
 def create_sudoers_rule(name, group, run_as, commands, sudoers_dir, validate, visudo_path, dry_run):
@@ -540,7 +554,7 @@ def remove_sudoers_rule(name, sudoers_dir, dry_run):
     show_default=True,
     help="Directorio sudoers.d destino",
 )
-@click.option("--validate", is_flag=True, help="Validar cada regla con visudo")
+@click.option("--validate", is_flag=True, default=True, help="Validación obligatoria de cada regla con visudo")
 @click.option("--visudo-path", default="visudo", show_default=True, help="Ruta/comando visudo")
 @click.option("--dry-run", is_flag=True, help="Simular sin escribir cambios")
 def apply_sudoers_file(config_file, sudoers_dir, validate, visudo_path, dry_run):

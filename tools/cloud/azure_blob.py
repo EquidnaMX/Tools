@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, List
 
 try:
-    from azure.storage.blob import BlobServiceClient, BlobClient
-    from azure.core.exceptions import ResourceNotFoundError, AzureError
+    from azure.storage.blob import BlobServiceClient
+    from azure.core.exceptions import ResourceNotFoundError
     HAS_AZURE = True
 except ImportError:
     HAS_AZURE = False
@@ -102,7 +102,7 @@ class AzureBlobProvider(CloudProvider):
                     "Must provide either connection_string or (account_name + account_key)"
                 )
             
-            self.logger.info(f"✓ Azure Blob Storage client created")
+            self.logger.info("✓ Azure Blob Storage client created")
             return self.client
             
         except Exception as e:

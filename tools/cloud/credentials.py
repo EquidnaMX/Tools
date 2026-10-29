@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 
 
 @dataclass
@@ -309,7 +309,6 @@ class CredentialManager:
             return False
         
         try:
-            from tools.cloud.factory import CloudProviderFactory
             
             # Build config
             config = {

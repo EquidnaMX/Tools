@@ -6,7 +6,7 @@ Provides cross-platform timezone detection and configuration.
 
 import subprocess
 import platform
-from typing import Optional, Dict
+from typing import Dict
 from pathlib import Path
 
 from tools.core.logger import get_logger

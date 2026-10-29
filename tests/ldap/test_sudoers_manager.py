@@ -1,10 +1,19 @@
 """Tests para gestión de sudoers LDAP helper."""
 
+import pytest
+
 from tools.ldap import SudoersManager, SudoersRule
 
 
 class TestSudoersManager:
     """Tests para SudoersManager."""
+
+    @pytest.fixture(autouse=True)
+    def valid_parser(self, monkeypatch):
+        # Filesystem unit cases; real parser and rejection cases live in test_sudoers_safety.
+        monkeypatch.setattr(
+            SudoersManager, "_validate_file", staticmethod(lambda *args: (True, "OK"))
+        )
 
     def test_sudoers_rule_format(self):
         rule = SudoersRule(

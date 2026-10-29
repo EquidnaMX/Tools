@@ -1,463 +1,119 @@
-# LDAP Client Authentication Module
+# Cliente LDAP, PAM y reglas sudoers
 
-Módulo completo para configuración de autenticación LDAP remota en sistemas Linux mediante PAM (Pluggable Authentication Modules).
+Genera planes y scripts para Debian/Ubuntu con NSLCD o SSSD. No configura ningún servidor al importar el módulo.
 
-## 🎯 Características
+## Estado y aplicación
 
-- **Dual Mode Support**: NSLCD (NSS-LDAP Connection Daemon) y SSSD (System Security Services Daemon)
-- **Configuración PAM completa**: common-auth, common-account, common-password, common-session, su
-- **Control de acceso por grupos**: Restricción a grupos LDAP específicos
-- **Backup automático**: Copia de seguridad con timestamp de todos los archivos modificados
-- **Dry-run mode**: Simula cambios sin aplicarlos
-- **Script generation**: Genera script bash standalone equivalente
-- **TLS Support**: Conexiones seguras con certificados
-- **Creación automática de home directories**: Con configuración de umask
-
-## 📋 Requisitos
-
-### Sistema Operativo
-- Debian/Ubuntu Linux (otras distros require ajustes)
-- Python 3.8+
-
-### Dependencias Python
-```bash
-pip install pyyaml
-pip install python-ldap  # Opcional: para test-connection
-```
-
-### Paquetes del Sistema
-Se instalan automáticamente durante la configuración:
-
-**Modo NSLCD:**
-- libpam-ldapd
-- nslcd
-- nscd (cache)
-
-**Modo SSSD:**
-- sssd
-- sssd-ldap
-- libpam-sss
-- libnss-sss
-
-## 🚀 Uso Básico
-
-### 1. Configuración Simple (NSLCD)
+La ejecución directa de `tools ldap configure-client` está deshabilitada: devuelve un error porque no existe un backend de aplicación validado. Tampoco acepta una instalación remota simulándola como local. Usar una de estas dos modalidades:
 
 ```bash
-tools ldap configure-client \
-  --ldap-uri ldap://ldap.example.com \
-  --base-dn dc=example,dc=com \
-  -g server-admin \
-  -g desarrollo
+# Revisar el plan sin modificar archivos, paquetes ni servicios
+tools ldap configure-client --ldap-uri ldap://ldap.example.com --base-dn dc=example,dc=com --dry-run
+
+# Generar un script; revisarlo antes de ejecutarlo como root
+tools ldap configure-client --ldap-uri ldap://ldap.example.com --base-dn dc=example,dc=com --output-script configure_ldap.sh
 ```
 
-Esto configurará:
-- Cliente LDAP con NSLCD
-- Autenticación PAM para usuarios LDAP
-- Acceso restringido a grupos `server-admin` y `desarrollo`
-- Creación automática de home directories
+La vista previa oculta la contraseña de bind y no registra respaldos inexistentes. El script sí puede contener credenciales: se guarda con modo `0700`. La generación no prueba conectividad, certificados, autenticación LDAP real ni compatibilidad con las políticas particulares de un servidor.
 
-### 2. Configuración con SSSD y TLS
+El script reemplaza los archivos PAM comunes y NSS incluidos en el plan. Revisar antes las políticas existentes, MFA, cuentas de recuperación y mecanismos de resolución NSS; no asumir que un perfil genérico preserva todas las particularidades del entorno.
+
+## Requisitos
+
+- Debian/Ubuntu, Bash, apt-get y systemd para ejecutar un script revisado.
+- Root, consola alternativa y una sesión administrativa independiente de LDAP para la aplicación.
+- Un servidor LDAP con TLS y un certificado verificable antes de activar StartTLS.
+- Python compatible y dependencias de Tools para generar planes o gestionar grupos.
+- `visudo` instalado para publicar cualquier regla sudoers.
+
+## Configuración
 
 ```bash
 tools ldap configure-client \
   --ldap-uri ldaps://ldap.example.com:636 \
   --base-dn dc=example,dc=com \
-  --bind-dn cn=readonly,dc=example,dc=com \
-  --bind-password MySecretPassword \
   --mode sssd \
   --use-tls \
-  --create-homedir
-```
-
-### 3. Modo Dry-Run (Simular sin Aplicar)
-
-```bash
-tools ldap configure-client \
-  --ldap-uri ldap://ldap.example.com \
-  --base-dn dc=example,dc=com \
+  -g server-admin -g desarrollo \
+  --create-homedir \
   --dry-run
 ```
 
-Muestra todos los cambios que se realizarían sin modificar el sistema.
+Opciones principales: `--bind-dn`, `--bind-password`, `--allowed-groups` / `-g`, `--mode nslcd|sssd`, `--use-tls/--no-tls`, `--create-homedir/--no-create-homedir`, `--password-hash`, `--dry-run`, `--output-script`.
 
-### 4. Generar Script Bash Standalone
+TLS está habilitado por defecto. Para `ldap://` se genera StartTLS; para `ldaps://`, TLS directo. El certificado se comprueba con la política `demand` y el almacén CA configurado. El programa no emite certificados ni habilita TLS en el servidor LDAP.
 
-```bash
-tools ldap configure-client \
-  --ldap-uri ldap://ldap.example.com \
-  --base-dn dc=example,dc=com \
-  -g admins \
-  --output-script /tmp/configure_ldap.sh
+Las credenciales y parámetros se conservan en el script y en su configuración de daemon. NSLCD usa `pam_ldap.so`, NSS `ldap` y `libnss-ldapd`; SSSD usa `pam_sss.so`, NSS `sss` y una configuración completa de dominio. Los valores multilínea y nombres de grupo que introduzcan operadores PAM se rechazan.
 
-# Ejecutar en servidor remoto
-chmod +x /tmp/configure_ldap.sh
-sudo /tmp/configure_ldap.sh
+`--bind-password` sigue siendo un argumento de CLI: evitar historial y exposición de procesos para secretos reales; preferir la API Python con secretos obtenidos de un gestor. NSLCD y SSSD necesitan la contraseña de bind en su configuración local protegida, con modo `0600`.
+
+## Grupos permitidos y migración
+
+Las reglas se gestionan en `/etc/pam.d/common-account`, antes de cualquier regla o `@include` que pudiera conceder acceso. La autenticación no se modifica al agregar o quitar grupos.
+
+```text
+# LDAP allowed groups (managed by tools-admin) - start
+account [success=1 default=ignore] pam_localuser.so
+account requisite pam_succeed_if.so user ingroup desarrollo:server-admin
+# LDAP allowed groups (managed by tools-admin) - end
 ```
 
-### 5. Probar Conexión LDAP
+La lista es OR. Una lista vacía deniega usuarios no locales. Las cuentas locales de recuperación omiten solo el filtro de grupos y siguen sujetas al resto de las comprobaciones de cuenta.
 
 ```bash
-tools ldap test-connection \
-  --ldap-uri ldap://ldap.example.com \
-  --base-dn dc=example,dc=com \
-  --bind-dn cn=admin,dc=example,dc=com \
-  --bind-password secret
-```
-
-### 6. Generar Archivo de Configuración YAML
-
-```bash
-# Generar template
-tools ldap generate-config -o ldap_config.yml
-
-# Editar el archivo
-vim ldap_config.yml
-
-# Usar el archivo (feature futura)
-tools ldap configure-client --config ldap_config.yml
-```
-
-### 7. Revisar, Agregar y Quitar Grupos Permitidos
-
-Estos comandos operan sobre `/etc/pam.d/common-auth` y permiten administrar reglas como:
-
-auth    sufficient      pam_succeed_if.so user ingroup server-admin
-auth    sufficient      pam_succeed_if.so user ingroup desarrollo
-
-```bash
-# Listar grupos permitidos actuales
 tools ldap groups list
-
-# Agregar un grupo
 tools ldap groups add devops
-
-# Quitar un grupo
 tools ldap groups remove desarrollo
-
-# Simular cambios sin escribir
 tools ldap groups add qa --dry-run
-
-# Usar un archivo alterno (útil para pruebas)
-tools ldap groups list --pam-auth-file ./common-auth
+tools ldap groups list --pam-account-file ./common-account
 ```
 
-### 8. Reglas Sudo Complementarias (sudoers.d)
+`--pam-auth-file` y el argumento Python `pam_auth_file` ya no se aceptan para editar grupos. Usar `--pam-account-file` / `pam_account_file`. No se transforma silenciosamente una pila `common-auth` heredada: revisar sus saltos numéricos y reglas antes de migrar. Un bloque administrado colocado después de otras reglas de cuenta o includes se rechaza para revisión manual.
 
-Para otorgar permisos de sudo a grupos LDAP con archivos dedicados en `/etc/sudoers.d`:
+Para proteger también SSH con llave y sudo con agente, el servicio debe invocar la fase PAM `account`. Comprobar `UsePAM` y las inclusiones reales del servicio. El bloque permite o deniega cuentas; no concede permisos sudo.
+
+## Reglas sudoers
 
 ```bash
-# Crear regla tipo hela-admin
-tools ldap sudoers create \
-  --name hela-admin \
-  --group hela-admin \
-  --run-as root:www-data \
-  --commands "ALL, !/usr/bin/passwd" \
-  --validate
-
-# Listar reglas existentes
+tools ldap sudoers create --name hela-admin --group hela-admin --run-as root:www-data --commands 'ALL, !/usr/bin/passwd'
 tools ldap sudoers list
-
-# Ver contenido de una regla
 tools ldap sudoers show hela-admin
-
-# Eliminar regla
-tools ldap sudoers remove hela-admin
-
-# Simular creación sin escribir
-tools ldap sudoers create \
-  --name hela-admin \
-  --group hela-admin \
-  --run-as root:www-data \
-  --commands "ALL, !/usr/bin/passwd" \
-  --dry-run
-```
-
-Ejemplo de salida esperada del archivo:
-
-```
-%hela-admin ALL=(root:www-data) ALL, !/usr/bin/passwd
-```
-
-### 9. Aplicación Masiva de Reglas Sudoers desde YAML
-
-Generar plantilla:
-
-```bash
+tools ldap sudoers remove hela-admin --dry-run
 tools ldap sudoers generate-template --output ldap_sudoers.yml
-```
-
-Formato esperado:
-
-```yaml
-sudoers_rules:
-  - name: hela-admin
-    group: hela-admin
-    run_as: root:www-data
-    commands: ALL, !/usr/bin/passwd
-  - name: devops-readonly
-    group: devops
-    run_as: root
-    commands: /usr/bin/systemctl status *, /usr/bin/journalctl *
-```
-
-Aplicar en lote:
-
-```bash
-tools ldap sudoers apply-file --file ldap_sudoers.yml --validate
-```
-
-Opciones útiles:
-
-```bash
-# Simular sin escribir
 tools ldap sudoers apply-file --file ldap_sudoers.yml --dry-run
-
-# Directorio alterno (pruebas)
-tools ldap sudoers apply-file --file ldap_sudoers.yml --sudoers-dir ./sudoers.d
 ```
 
-## 🔧 Opciones Avanzadas
+`--sudoers-dir` permite un directorio alterno para pruebas. Los nombres deben contener únicamente letras, números, `_` o `-`; se rechazan rutas, puntos y enlaces simbólicos. Los campos de reglas son valores de una sola línea y el campo run-as se limita a listas de usuarios y grupos.
 
-### Todas las Opciones de configure-client
+Cada escritura se prepara en un archivo temporal `0440`, se valida con `visudo -cf` y se publica mediante reemplazo atómico. La validación es obligatoria, incluso si un cliente Python pasa `validate=False`; `--validate` se conserva por compatibilidad. Si falta `visudo` o rechaza el contenido, no se sustituye la regla anterior.
 
-```
---ldap-uri TEXT              URI del servidor LDAP (requerido)
-                             Ejemplos: ldap://ldap.example.com
-                                      ldaps://ldap.example.com:636
+Antes de sustituir o eliminar una regla se guarda una copia en `tools-sudoers-backups`, al lado del directorio de reglas y fuera de su inclusión activa. La aplicación YAML procesa reglas individualmente; no constituye una transacción de todo el lote.
 
---base-dn TEXT               Base DN de búsqueda (requerido)
-                             Ejemplo: dc=example,dc=com
+## Respaldos y recuperación del script
 
---bind-dn TEXT               DN para bind autenticado (opcional)
-                             Ejemplo: cn=readonly,dc=example,dc=com
+El script crea `/var/backups/tools-ldap.XXXXXX`, con permisos privados y un archivo `manifest` que registra existencia previa, copia y ruta. Respalda la configuración y el estado activo de servicios antes de instalar paquetes o escribir archivos.
 
---bind-password TEXT         Password para bind DN (opcional)
+Ante error o interrupción, restaura las configuraciones, reinicia los servicios que estaban activos y detiene los que estaban inactivos. La recuperación no desinstala paquetes ni revierte los efectos de sus scripts de instalación. Mantener consola alternativa y conservar los respaldos hasta validar acceso y recuperación.
 
--g, --allowed-group TEXT     Grupos LDAP permitidos (múltiple)
-                             Por defecto: server-admin, desarrollo
-                             Ejemplo: -g admins -g users -g operators
+Para recuperación manual, revisar el manifiesto, restaurar las copias conservando metadatos y retirar solo los archivos nuevos de ese intento. Comprobar la configuración del daemon antes de reiniciarlo. No restaurar ciegamente sobre cambios posteriores.
 
---mode [nslcd|sssd]          Modo de cliente LDAP (default: nslcd)
+## Comprobación
 
---use-tls / --no-tls         Habilitar/deshabilitar TLS (default: enabled)
-
---create-homedir / --no-create-homedir
-                             Crear home directories automáticamente
-                             (default: enabled)
-
---password-hash TEXT         Algoritmo de hash de password
-                             Opciones: yescrypt, sha512, sha256
-                             (default: yescrypt)
-
---dry-run                    Simular sin aplicar cambios
-
---output-script PATH         Generar script bash en vez de ejecutar
-```
-
-## 📖 NSLCD vs SSSD
-
-### ¿Cuándo usar NSLCD?
-
-- **Simplicidad**: Configuración más sencilla
-- **Uso de recursos**: Menor consumo de memoria
-- **Casos básicos**: Autenticación LDAP sin funcionalidades avanzadas
-
-### ¿Cuándo usar SSSD?
-
-- **Cache offline**: Los usuarios pueden autenticarse sin conexión al LDAP
-- **Multiple domains**: Soporte para múltiples dominios/backends
-- **Active Directory**: Mejor integración con AD
-- **Smart card**: Soporte para autenticación con tarjetas inteligentes
-- **Sudo rules**: Gestión de reglas sudo desde LDAP
-
-## 🔄 Proceso de Instalación
-
-El instalador realiza los siguientes pasos:
-
-1. **Instalación de paquetes** (apt-get install)
-2. **Backup de archivos** de configuración existentes
-3. **Configuración de PAM**:
-   - `/etc/pam.d/common-auth` - Autenticación
-   - `/etc/pam.d/common-account` - Validación de cuenta
-   - `/etc/pam.d/common-password` - Cambio de passwords
-   - `/etc/pam.d/common-session` - Sesión y home directory
-   - `/etc/pam.d/su` - Comando su
-4. **Configuración de NSSwitch** (`/etc/nsswitch.conf`)
-5. **Configuración NSLCD** (`/etc/nslcd.conf`) o **SSSD** (`/etc/sssd/sssd.conf`)
-6. **Reinicio de servicios**:
-   - NSLCD: `nslcd`, `nscd`
-   - SSSD: `sssd`
-
-## 💾 Backups
-
-Todos los archivos modificados se respaldan automáticamente con el formato:
-
-```
-<archivo_original>.bak_YYYYMMDD_HHMMSS
-```
-
-Ejemplo:
-```
-/etc/pam.d/common-auth.bak_20260309_143022
-/etc/nslcd.conf.bak_20260309_143022
-```
-
-Para restaurar:
-```bash
-sudo cp /etc/pam.d/common-auth.bak_20260309_143022 /etc/pam.d/common-auth
-sudo systemctl restart nslcd nscd
-```
-
-## 🔐 Seguridad
-
-### Grupos Permitidos
-
-El control de acceso se implementa en `/etc/pam.d/common-auth` usando `pam_listfile`:
-
-```
-auth required pam_listfile.so onerr=fail item=group sense=allow file=/etc/security/ldap_groups
-```
-
-Donde `/etc/security/ldap_groups` contiene:
-```
-server-admin
-desarrollo
-```
-
-### Permisos de Archivos
-
-- `/etc/nslcd.conf`: `0600` (solo root)
-- `/etc/sssd/sssd.conf`: `0600` (solo root)
-- `/etc/security/ldap_groups`: `0644` (lectura todos)
-
-### Passwords en Bind DN
-
-⚠️ **Advertencia**: Si usas `--bind-dn` y `--bind-password`, el password se almacena en texto plano en:
-- `/etc/nslcd.conf` (NSLCD)
-- `/etc/sssd/sssd.conf` (SSSD)
-
-**Recomendaciones:**
-1. Usar una cuenta de solo lectura (readonly)
-2. Permisos `0600` en archivos de config (aplicados automáticamente)
-3. Considerar SSSD con Kerberos para entornos productivos
-
-## 🧪 Testing
-
-### Tests Unitarios
+Otros comandos disponibles:
 
 ```bash
-# Tests del módulo LDAP
-pytest tests/ldap/ -v
-
-# Tests del instalador
-pytest tests/ldap/test_ldap_client_installer.py -v
-
-# Tests CLI
-pytest tests/ldap/test_ldap_commands.py -v
+# Consulta de conectividad; requiere el cliente LDAP indicado por la herramienta
+tools ldap test-connection --ldap-uri ldaps://ldap.example.com:636 --base-dn dc=example,dc=com
+# Plantilla YAML local; configure-client aún no acepta --config
+tools ldap generate-config -o ldap_config.yml
 ```
 
-### Cobertura
+El verificador de conexión no sustituye la validación del plan ni demuestra que se hayan instalado PAM, NSS o servicios. La prueba de acceso a un servidor debe realizarse como una operación separada y autorizada.
 
 ```bash
-pytest tests/ldap/ --cov=tools.ldap --cov-report=html
+python -m pytest tests/ldap tests/remote/test_ssh_executor.py tests/backup -q
 ```
 
-## 📝 Ejemplos de Configuración
+Las pruebas incluyen PAM real mediante `pam_start_confdir` y archivos temporales en Linux: autenticación aceptada/rechazada, autorización por grupos e includes. También comprueban TLS/bind en los scripts, sintaxis Bash, recuperación de servicios con comandos simulados y validación real de sudoers cuando `visudo` está disponible.
 
-### Ejemplo 1: Configuración Básica Corporativa
-
-```bash
-tools ldap configure-client \
-  --ldap-uri ldap://ldap.corp.example.com \
-  --base-dn dc=corp,dc=example,dc=com \
-  -g sysadmins \
-  -g developers \
-  -g support \
-  --mode nslcd \
-  --create-homedir
-```
-
-### Ejemplo 2: SSSD con TLS y Bind Autenticado
-
-```bash
-tools ldap configure-client \
-  --ldap-uri ldaps://ldap.secure.example.com:636 \
-  --base-dn dc=secure,dc=example,dc=com \
-  --bind-dn cn=service-account,ou=services,dc=secure,dc=example,dc=com \
-  --bind-password $(cat ~/.ldap_bind_password) \
-  --mode sssd \
-  --use-tls \
-  -g it-team \
-  -g management
-```
-
-### Ejemplo 3: Generar Script para Deployment Automatizado
-
-```bash
-# Generar script
-tools ldap configure-client \
-  --ldap-uri ldap://ldap.example.com \
-  --base-dn dc=example,dc=com \
-  -g admins \
-  --output-script deploy_ldap.sh
-
-# Distribuir a múltiples servidores
-for host in server1 server2 server3; do
-  scp deploy_ldap.sh root@${host}:/tmp/
-  ssh root@${host} "bash /tmp/deploy_ldap.sh"
-done
-```
-
-## 🐛 Troubleshooting
-
-### Error: Cannot connect to LDAP server
-
-```bash
-# Probar conexión manual
-tools ldap test-connection \
-  --ldap-uri ldap://ldap.example.com \
-  --base-dn dc=example,dc=com
-
-# Ver logs NSLCD
-sudo journalctl -u nslcd -f
-
-# Ver logs SSSD
-sudo journalctl -u sssd -f
-sudo tail -f /var/log/sssd/sssd.log
-```
-
-### Error: User can login but no home directory
-
-- Verificar `/etc/pam.d/common-session` tiene `pam_mkhomedir`
-- Verificar permisos en `/home`
-- Revisar: `tools ldap configure-client ... --create-homedir`
-
-### Error: All LDAP users can login (groups filter not working)
-
-- Verificar `/etc/security/ldap_groups` existe y contiene los grupos
-- Verificar permisos: `chmod 644 /etc/security/ldap_groups`
-- Revisar `/etc/pam.d/common-auth` tiene la línea `pam_listfile`
-
-### Error: Permission denied after configuration
-
-- **Restaurar desde backup**:
-  ```bash
-  sudo cp /etc/pam.d/common-auth.bak_YYYYMMDD_HHMMSS /etc/pam.d/common-auth
-  sudo systemctl restart nslcd nscd
-  ```
-
-## 🔗 Referencias
-
-- [NSLCD Documentation](https://arthurdejong.org/nss-pam-ldapd/)
-- [SSSD Documentation](https://sssd.io/)
-- [PAM Configuration](https://linux.die.net/man/5/pam.conf)
-- [NSSwitch Configuration](https://man7.org/linux/man-pages/man5/nsswitch.conf.5.html)
-
-## 📜 Licencia
-
-MIT License - Ver archivo LICENSE del proyecto principal.
-
-## 👨‍💻 Autor
-
-gruelasjr - Tools Admin Toolkit v2.9.0
+La suite local no aplica scripts a servidores ni sustituye la validación de una migración real. Antes de desplegar: revisar el plan, comprobar TLS y NSS, ensayar en un entorno aislado y validar usuario permitido, denegado, recuperación local y reversión.

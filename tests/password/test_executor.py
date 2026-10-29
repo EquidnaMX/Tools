@@ -67,7 +67,7 @@ def test_verify_password_change_returns_false_on_exception():
 def test_ssh_executor_builds_and_executes_command():
     process = DummyProcess(returncode=0, stdout=b"done", stderr=b"")
 
-    with patch("asyncio.create_subprocess_shell", new=AsyncMock(return_value=process)):
+    with patch("asyncio.create_subprocess_shell", new=AsyncMock(return_value=process)) as mocked:
         returncode, stdout, stderr = asyncio.run(
             SSHExecutor.execute(host="host1", command="echo hi", username="root", timeout=5)
         )
@@ -75,3 +75,15 @@ def test_ssh_executor_builds_and_executes_command():
     assert returncode == 0
     assert stdout == "done"
     assert stderr == ""
+    command = mocked.call_args.args[0]
+    assert "StrictHostKeyChecking=yes" in command
+    assert "StrictHostKeyChecking=no" not in command
+
+
+def test_password_verification_requires_trusted_host():
+    process = DummyProcess(returncode=0)
+    with patch("asyncio.create_subprocess_shell", new=AsyncMock(return_value=process)) as mocked:
+        assert asyncio.run(RemotePasswordExecutor().verify_password_change("example.test", "user", "dummy"))
+    command = mocked.call_args.args[0]
+    assert "StrictHostKeyChecking=yes" in command
+    assert "StrictHostKeyChecking=no" not in command

@@ -12,7 +12,7 @@ Supported algorithms:
 import gzip
 import io
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 
 class CompressionError(Exception):
@@ -237,5 +237,5 @@ def should_compress(file_path: Path, compression_type: str = "gzip") -> bool:
         # Worth compressing if we save >10%
         return len(compressed) < len(sample) * 0.9
     
-    except:
+    except Exception:
         return False

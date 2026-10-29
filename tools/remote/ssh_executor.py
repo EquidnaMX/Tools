@@ -85,7 +85,7 @@ class SSHExecutor:
         key_path: Optional[Path] = None,
         timeout: int = 10,
         max_retries: int = 1,
-        strict_host_key_checking: bool = False,
+        strict_host_key_checking: bool = True,
     ):
         """Initialize SSH executor.
 
@@ -120,8 +120,6 @@ class SSHExecutor:
             "ssh",
             "-o",
             f"ConnectTimeout={self.timeout}",
-            "-o",
-            "UserKnownHostsFile=/dev/null",
             "-o",
             f"StrictHostKeyChecking={'yes' if self.strict_host_key_checking else 'no'}",
             "-o",

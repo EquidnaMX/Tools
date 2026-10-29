@@ -29,8 +29,10 @@ class TestLDAPCommands:
             ldap,
             [
                 "configure-client",
-                "--ldap-uri", "ldap://test.example.com",
-                "--base-dn", "dc=test,dc=com",
+                "--ldap-uri",
+                "ldap://test.example.com",
+                "--base-dn",
+                "dc=test,dc=com",
                 "--dry-run",
             ],
         )
@@ -46,10 +48,14 @@ class TestLDAPCommands:
             ldap,
             [
                 "configure-client",
-                "--ldap-uri", "ldap://test.example.com",
-                "--base-dn", "dc=test,dc=com",
-                "-g", "admins",
-                "-g", "users",
+                "--ldap-uri",
+                "ldap://test.example.com",
+                "--base-dn",
+                "dc=test,dc=com",
+                "-g",
+                "admins",
+                "-g",
+                "users",
                 "--dry-run",
             ],
         )
@@ -65,9 +71,12 @@ class TestLDAPCommands:
             ldap,
             [
                 "configure-client",
-                "--ldap-uri", "ldap://test.example.com",
-                "--base-dn", "dc=test,dc=com",
-                "--mode", "sssd",
+                "--ldap-uri",
+                "ldap://test.example.com",
+                "--base-dn",
+                "dc=test,dc=com",
+                "--mode",
+                "sssd",
                 "--dry-run",
             ],
         )
@@ -84,9 +93,12 @@ class TestLDAPCommands:
             ldap,
             [
                 "configure-client",
-                "--ldap-uri", "ldap://test.example.com",
-                "--base-dn", "dc=test,dc=com",
-                "--output-script", str(script_file),
+                "--ldap-uri",
+                "ldap://test.example.com",
+                "--base-dn",
+                "dc=test,dc=com",
+                "--output-script",
+                str(script_file),
             ],
         )
 
@@ -129,10 +141,14 @@ class TestLDAPCommands:
             ldap,
             [
                 "configure-client",
-                "--ldap-uri", "ldaps://secure.example.com",
-                "--base-dn", "dc=example,dc=com",
-                "--bind-dn", "cn=admin,dc=example,dc=com",
-                "--bind-password", "secret123",
+                "--ldap-uri",
+                "ldaps://secure.example.com",
+                "--base-dn",
+                "dc=example,dc=com",
+                "--bind-dn",
+                "cn=admin,dc=example,dc=com",
+                "--bind-password",
+                "secret123",
                 "--dry-run",
             ],
         )
@@ -148,8 +164,10 @@ class TestLDAPCommands:
             ldap,
             [
                 "configure-client",
-                "--ldap-uri", "ldap://test.example.com",
-                "--base-dn", "dc=test,dc=com",
+                "--ldap-uri",
+                "ldap://test.example.com",
+                "--base-dn",
+                "dc=test,dc=com",
                 "--no-tls",
                 "--dry-run",
             ],
@@ -164,9 +182,12 @@ class TestLDAPCommands:
             ldap,
             [
                 "configure-client",
-                "--ldap-uri", "ldap://test.example.com",
-                "--base-dn", "dc=test,dc=com",
-                "--password-hash", "sha512",
+                "--ldap-uri",
+                "ldap://test.example.com",
+                "--base-dn",
+                "dc=test,dc=com",
+                "--password-hash",
+                "sha512",
                 "--dry-run",
             ],
         )
@@ -185,84 +206,75 @@ class TestLDAPCommands:
         assert "Missing option" in result.output or "required" in result.output.lower()
 
     def test_groups_list(self, tmp_path):
-        """Test listar grupos LDAP de common-auth."""
-        common_auth = tmp_path / "common-auth"
-        common_auth.write_text(
-            "\n".join(
-                [
-                    "auth    sufficient      pam_unix.so",
-                    "auth    sufficient      pam_succeed_if.so user ingroup server-admin",
-                    "auth    sufficient      pam_succeed_if.so user ingroup desarrollo",
-                    "auth    requisite       pam_deny.so",
-                ]
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        from tools.ldap import LDAPClientInstaller, LDAPConfig
 
-        runner = CliRunner()
-        result = runner.invoke(
-            ldap,
-            ["groups", "list", "--pam-auth-file", str(common_auth)],
+        path = tmp_path / "common-account"
+        path.write_text("account required pam_permit.so\n", encoding="utf-8")
+        installer = LDAPClientInstaller(LDAPConfig("ldap://example.test", "dc=test"))
+        for group in ["server-admin", "desarrollo"]:
+            assert installer.add_allowed_group(group, pam_account_file=str(path))[0]
+        result = CliRunner().invoke(
+            ldap, ["groups", "list", "--pam-account-file", str(path)]
         )
-
         assert result.exit_code == 0
-        assert "server-admin" in result.output
-        assert "desarrollo" in result.output
+        assert "server-admin" in result.output and "desarrollo" in result.output
 
     def test_groups_add(self, tmp_path):
-        """Test agregar grupo LDAP por CLI."""
-        common_auth = tmp_path / "common-auth"
-        common_auth.write_text(
-            "\n".join(
-                [
-                    "auth    sufficient      pam_unix.so",
-                    "auth    sufficient      pam_succeed_if.so user ingroup server-admin",
-                    "auth    requisite       pam_deny.so",
-                ]
-            )
-            + "\n",
-            encoding="utf-8",
+        path = tmp_path / "common-account"
+        path.write_text("account required pam_unix.so\n", encoding="utf-8")
+        result = CliRunner().invoke(
+            ldap, ["groups", "add", "desarrollo", "--pam-account-file", str(path)]
         )
-
-        runner = CliRunner()
-        result = runner.invoke(
-            ldap,
-            ["groups", "add", "desarrollo", "--pam-auth-file", str(common_auth)],
-        )
-
         assert result.exit_code == 0
-        content = common_auth.read_text(encoding="utf-8")
-        assert "ingroup desarrollo" in content
+        assert "ingroup desarrollo" in path.read_text()
+        assert path.read_text().endswith("account required pam_unix.so\n")
 
     def test_groups_remove(self, tmp_path):
-        """Test quitar grupo LDAP por CLI."""
-        common_auth = tmp_path / "common-auth"
-        common_auth.write_text(
-            "\n".join(
-                [
-                    "auth    sufficient      pam_unix.so",
-                    "auth    sufficient      pam_succeed_if.so user ingroup server-admin",
-                    "auth    sufficient      pam_succeed_if.so user ingroup desarrollo",
-                    "auth    requisite       pam_deny.so",
-                ]
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        from tools.ldap import LDAPClientInstaller, LDAPConfig
 
-        runner = CliRunner()
-        result = runner.invoke(
-            ldap,
-            ["groups", "remove", "desarrollo", "--pam-auth-file", str(common_auth)],
+        path = tmp_path / "common-account"
+        path.write_text("account required pam_permit.so\n", encoding="utf-8")
+        installer = LDAPClientInstaller(LDAPConfig("ldap://example.test", "dc=test"))
+        assert installer.add_allowed_group("desarrollo", pam_account_file=str(path))[0]
+        result = CliRunner().invoke(
+            ldap, ["groups", "remove", "desarrollo", "--pam-account-file", str(path)]
         )
-
         assert result.exit_code == 0
-        content = common_auth.read_text(encoding="utf-8")
-        assert "ingroup desarrollo" not in content
+        assert "ingroup desarrollo" not in path.read_text()
+        assert "account requisite pam_deny.so" in path.read_text()
 
-    def test_sudoers_create(self, tmp_path):
+    def test_direct_configure_fails_honestly(self):
+        result = CliRunner().invoke(
+            ldap,
+            [
+                "configure-client",
+                "--ldap-uri",
+                "ldap://example.test",
+                "--base-dn",
+                "dc=test",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "unsupported" in result.output
+        assert "completada exitosamente" not in result.output
+
+    def test_old_auth_option_is_rejected_without_modifying_stack(self, tmp_path):
+        path = tmp_path / "common-auth"
+        path.write_text("auth required pam_deny.so\n")
+        result = CliRunner().invoke(
+            ldap, ["groups", "add", "admins", "--pam-auth-file", str(path)]
+        )
+        assert result.exit_code != 0
+        assert path.read_text() == "auth required pam_deny.so\n"
+
+    def test_sudoers_create(self, tmp_path, monkeypatch):
         """Test crear regla sudoers por CLI."""
+        from tools.ldap import SudoersManager
+
+        monkeypatch.setattr(
+            SudoersManager, "_validate_file", staticmethod(lambda *args: (True, "OK"))
+        )
+
         runner = CliRunner()
         result = runner.invoke(
             ldap,
@@ -288,7 +300,9 @@ class TestLDAPCommands:
 
     def test_sudoers_list(self, tmp_path):
         """Test listar reglas sudoers por CLI."""
-        (tmp_path / "hela-admin").write_text("%hela-admin ALL=(root) ALL\n", encoding="utf-8")
+        (tmp_path / "hela-admin").write_text(
+            "%hela-admin ALL=(root) ALL\n", encoding="utf-8"
+        )
 
         runner = CliRunner()
         result = runner.invoke(
@@ -301,7 +315,9 @@ class TestLDAPCommands:
 
     def test_sudoers_remove(self, tmp_path):
         """Test eliminar regla sudoers por CLI."""
-        (tmp_path / "hela-admin").write_text("%hela-admin ALL=(root) ALL\n", encoding="utf-8")
+        (tmp_path / "hela-admin").write_text(
+            "%hela-admin ALL=(root) ALL\n", encoding="utf-8"
+        )
 
         runner = CliRunner()
         result = runner.invoke(
@@ -329,7 +345,7 @@ class TestLDAPCommands:
         assert "sudoers_rules" in payload
         assert len(payload["sudoers_rules"]) >= 1
 
-    def test_sudoers_apply_file(self, tmp_path):
+    def test_sudoers_apply_file(self, tmp_path, monkeypatch):
         """Test aplicar reglas sudoers desde YAML."""
         config_file = tmp_path / "sudoers.yml"
         payload = {
@@ -349,6 +365,12 @@ class TestLDAPCommands:
             ]
         }
         config_file.write_text(yaml.dump(payload, sort_keys=False), encoding="utf-8")
+
+        from tools.ldap import SudoersManager
+
+        monkeypatch.setattr(
+            SudoersManager, "_validate_file", staticmethod(lambda *args: (True, "OK"))
+        )
 
         runner = CliRunner()
         result = runner.invoke(

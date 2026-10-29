@@ -1,11 +1,9 @@
 """Tests for cloud provider implementations."""
 
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, Any
+from unittest.mock import patch, MagicMock
 
-from tools.cloud.providers import CloudProvider, CloudObject
+from tools.cloud.providers import CloudObject
 from tools.cloud.factory import CloudProviderFactory
 from tools.cloud.aws_s3 import S3Provider
 from tools.cloud.google_cloud import GCSProvider

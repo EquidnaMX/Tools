@@ -3,7 +3,6 @@ Tests for UploadStats class
 """
 import json
 from datetime import datetime
-import pytest
 from tools.cloud.sync import UploadStats
 
 

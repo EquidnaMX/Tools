@@ -3,7 +3,6 @@ Tests para la clase SyncStats
 """
 import json
 from datetime import datetime
-from pathlib import Path
 
 from tools.cloud.sync import SyncStats
 

@@ -1,133 +1,201 @@
-"""Gestión de reglas sudoers complementarias a autenticación LDAP."""
+"""Constrained, validated and recoverable sudoers rule management."""
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 
 
 @dataclass
 class SudoersRule:
-    """Representa una regla sudoers para un grupo."""
-
     group: str
     run_as: str = "root"
     commands: str = "ALL"
 
     def to_line(self) -> str:
-        """Convierte la regla al formato sudoers."""
-        clean_group = self.group.lstrip("%")
+        for value in (self.group, self.run_as, self.commands):
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+                or any(c in value for c in "\r\n\0")
+            ):
+                raise ValueError("Sudoers fields must be nonempty single-line strings")
+        clean_group = self.group[1:] if self.group.startswith("%") else self.group
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", clean_group):
+            raise ValueError("Invalid sudoers group name")
+        atom = r"!?(?:[A-Za-z_][A-Za-z0-9_.-]*|#[0-9]+|%[A-Za-z_][A-Za-z0-9_.-]*)"
+        names = atom + r"(?:\s*,\s*" + atom + r")*"
+        if not re.fullmatch(names + r"(?:\s*:\s*" + names + r")?", self.run_as):
+            raise ValueError("Invalid run-as user/group list")
         return f"%{clean_group} ALL=({self.run_as}) {self.commands}"
 
 
 class SudoersManager:
-    """Administrador de archivos en /etc/sudoers.d."""
-
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
 
-    def create_rule_file(
-        self,
-        file_name: str,
-        rule: SudoersRule,
-        sudoers_dir: str = "/etc/sudoers.d",
-        validate: bool = False,
-        visudo_path: str = "visudo",
-    ) -> Tuple[bool, str]:
-        """Crea un archivo sudoers con una regla."""
-        clean_name = file_name.strip()
-        if not clean_name:
-            return False, "El nombre del archivo no puede estar vacío"
+    @staticmethod
+    def _target(file_name, sudoers_dir):
+        # Dots and '~' are also forbidden: sudo ignores such include-dir names.
+        if not isinstance(file_name, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-]+", file_name
+        ):
+            raise ValueError(
+                "Use a sudoers basename containing only letters, numbers, '-' or '_'"
+            )
+        directory = Path(sudoers_dir)
+        if directory.is_symlink():
+            raise ValueError("Refusing a symbolic-link sudoers directory")
+        directory = directory.resolve()
+        target = directory / file_name
+        if target.is_symlink() or (target.exists() and not target.is_file()):
+            raise ValueError("Refusing a symbolic link or non-regular sudoers file")
+        return target
 
-        target_dir = Path(sudoers_dir)
-        target_file = target_dir / clean_name
-
-        content = self._build_file_content(rule)
-
-        if validate:
-            is_valid, message = self.validate_content(content, visudo_path=visudo_path)
-            if not is_valid:
-                return False, f"Validación sudoers falló: {message}"
-
-        if self.dry_run:
-            return True, f"[DRY-RUN] Se crearía {target_file} con: {rule.to_line()}"
-
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_file.write_text(content, encoding="utf-8")
-        os.chmod(target_file, 0o440)
-
-        return True, f"Archivo creado: {target_file}"
-
-    def list_rule_files(self, sudoers_dir: str = "/etc/sudoers.d") -> List[str]:
-        """Lista archivos de reglas en el directorio sudoers."""
-        target_dir = Path(sudoers_dir)
-        if not target_dir.exists():
-            return []
-
-        files: List[str] = []
-        for path in sorted(target_dir.iterdir()):
-            if path.is_file():
-                files.append(path.name)
-
-        return files
-
-    def remove_rule_file(self, file_name: str, sudoers_dir: str = "/etc/sudoers.d") -> Tuple[bool, str]:
-        """Elimina un archivo de regla sudoers."""
-        clean_name = file_name.strip()
-        if not clean_name:
-            return False, "El nombre del archivo no puede estar vacío"
-
-        target_file = Path(sudoers_dir) / clean_name
-        if not target_file.exists():
-            return False, f"Archivo no encontrado: {target_file}"
-
-        if self.dry_run:
-            return True, f"[DRY-RUN] Se eliminaría {target_file}"
-
-        target_file.unlink()
-        return True, f"Archivo eliminado: {target_file}"
-
-    def show_rule_file(self, file_name: str, sudoers_dir: str = "/etc/sudoers.d") -> Tuple[bool, str]:
-        """Muestra el contenido de un archivo sudoers."""
-        target_file = Path(sudoers_dir) / file_name.strip()
-        if not target_file.exists():
-            return False, f"Archivo no encontrado: {target_file}"
-
-        return True, target_file.read_text(encoding="utf-8")
-
-    def validate_content(self, content: str, visudo_path: str = "visudo") -> Tuple[bool, str]:
-        """Valida contenido sudoers usando visudo -cf."""
-        temp_path: Optional[str] = None
+    @staticmethod
+    def _validate_file(path, visudo_path):
         try:
-            with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tmp:
-                tmp.write(content)
-                temp_path = tmp.name
-
             result = subprocess.run(
-                [visudo_path, "-cf", temp_path],
+                [visudo_path, "-cf", str(path)],
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=30,
             )
-
             if result.returncode == 0:
                 return True, "OK"
+            return (
+                False,
+                (result.stderr or result.stdout or "visudo rejected the rule").strip(),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, str(exc)
 
-            error_output = (result.stderr or result.stdout or "error desconocido").strip()
-            return False, error_output
-        except FileNotFoundError:
-            return False, f"No se encontró '{visudo_path}' en el sistema"
-        except Exception as exc:
+    @staticmethod
+    def _backup(target):
+        # Backups must never become active sudoers include files.
+        directory = target.parent.parent / "tools-sudoers-backups"
+        if directory.is_symlink():
+            raise ValueError("Refusing a symbolic-link backup directory")
+        directory.mkdir(mode=0o700, exist_ok=True)
+        metadata = directory.stat()
+        if os.name != "nt" and (
+            metadata.st_mode & 0o022
+            or (hasattr(os, "geteuid") and metadata.st_uid != os.geteuid())
+        ):
+            raise ValueError(
+                "Backup directory is writable by others or owned by another user"
+            )
+        fd, name = tempfile.mkstemp(prefix=target.name + "-", dir=str(directory))
+        os.close(fd)
+        try:
+            shutil.copy2(target, name)
+        except Exception:
+            os.unlink(name)
+            raise
+        return Path(name)
+
+    def create_rule_file(
+        self,
+        file_name,
+        rule,
+        sudoers_dir="/etc/sudoers.d",
+        validate=True,
+        visudo_path="visudo",
+    ) -> Tuple[bool, str]:
+        """Validation is mandatory on writes; legacy validate=False cannot bypass it."""
+        staged: Optional[str] = None
+        try:
+            target = self._target(file_name, sudoers_dir)
+            content = self._build_file_content(rule)
+            if self.dry_run:
+                return (
+                    True,
+                    f"[DRY-RUN] Se crearía {target}; visudo se exige al aplicar: {rule.to_line()}",
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, staged = tempfile.mkstemp(prefix=".tools-rule-", dir=str(target.parent))
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(staged, 0o440)
+            valid, message = self._validate_file(staged, visudo_path)
+            if not valid:
+                return False, f"Validación sudoers falló: {message}"
+            # Check the name again immediately before using the staged result.
+            self._target(file_name, sudoers_dir)
+            backup = self._backup(target) if target.exists() else None
+            os.replace(staged, target)
+            staged = None
+            suffix = f"; respaldo: {backup}" if backup else ""
+            return True, f"Archivo creado: {target}{suffix}"
+        except (ValueError, OSError) as exc:
             return False, str(exc)
         finally:
-            if temp_path and Path(temp_path).exists():
-                Path(temp_path).unlink(missing_ok=True)
+            if staged and os.path.exists(staged):
+                os.chmod(staged, 0o600)
+                os.unlink(staged)
 
-    def _build_file_content(self, rule: SudoersRule) -> str:
-        """Construye contenido completo del archivo sudoers."""
+    def list_rule_files(self, sudoers_dir="/etc/sudoers.d") -> List[str]:
+        directory = Path(sudoers_dir)
+        if directory.is_symlink() or not directory.is_dir():
+            return []
+        return sorted(
+            path.name
+            for path in directory.iterdir()
+            if re.fullmatch(r"[A-Za-z0-9_-]+", path.name)
+            and path.is_file()
+            and not path.is_symlink()
+        )
+
+    def remove_rule_file(
+        self, file_name, sudoers_dir="/etc/sudoers.d"
+    ) -> Tuple[bool, str]:
+        try:
+            target = self._target(file_name, sudoers_dir)
+            if not target.exists():
+                return False, f"Archivo no encontrado: {target}"
+            if self.dry_run:
+                return True, f"[DRY-RUN] Se eliminaría {target}"
+            backup = self._backup(target)
+            target.unlink()
+            return True, f"Archivo eliminado: {target}; respaldo: {backup}"
+        except (ValueError, OSError) as exc:
+            return False, str(exc)
+
+    def show_rule_file(
+        self, file_name, sudoers_dir="/etc/sudoers.d"
+    ) -> Tuple[bool, str]:
+        try:
+            target = self._target(file_name, sudoers_dir)
+            if not target.exists():
+                return False, f"Archivo no encontrado: {target}"
+            return True, target.read_text(encoding="utf-8")
+        except (ValueError, OSError) as exc:
+            return False, str(exc)
+
+    def validate_content(self, content, visudo_path="visudo") -> Tuple[bool, str]:
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w", delete=False, encoding="utf-8"
+            ) as stream:
+                stream.write(content)
+                path = stream.name
+            return self._validate_file(path, visudo_path)
+        except OSError as exc:
+            return False, str(exc)
+        finally:
+            if path and os.path.exists(path):
+                os.unlink(path)
+
+    @staticmethod
+    def _build_file_content(rule):
         return (
-            "# Managed by tools-admin (LDAP sudoers helper)\n"
-            f"{rule.to_line()}\n"
+            "# Managed by tools-admin (LDAP sudoers helper)\n" + rule.to_line() + "\n"
         )

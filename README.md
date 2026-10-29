@@ -36,7 +36,7 @@ tools --help
 tools cloud sync --profile production_backups
 tools remote exec "uptime" --hosts 192.168.1.10
 tools remote exec "uptime" --hosts 192.168.1.10
-tools ldap configure-client --ldap-uri ldap://ldap.example.com --base-dn dc=example,dc=com
+tools ldap configure-client --ldap-uri ldap://ldap.example.com --base-dn dc=example,dc=com --dry-run
 tools mail audit --domain example.com
 ```
 
@@ -675,6 +675,8 @@ tools config validate ~/.tools/cloud_profiles.yml
 
 ### 9. 🔐 Autenticación LDAP Remota
 
+La aplicación directa está deshabilitada hasta disponer de un backend validado. Usar `--dry-run` o generar un script revisable. Los grupos se gestionan en `common-account`; ver [guía LDAP y migración](tools/ldap/README.md).
+
 ```bash
 # Configurar cliente LDAP con PAM (modo NSLCD)
 tools ldap configure-client \
@@ -693,7 +695,8 @@ tools ldap configure-client \
   --bind-password secret123 \
   --mode sssd \
   --use-tls \
-  --create-homedir
+  --create-homedir \
+  --dry-run
 
 # Generar script bash standalone
 tools ldap configure-client \

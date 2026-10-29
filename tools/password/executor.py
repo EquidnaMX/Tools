@@ -5,8 +5,6 @@ Handles password changes on remote Linux systems with verification and rollback.
 """
 
 import asyncio
-import subprocess
-import json
 from typing import Optional, Tuple
 from datetime import datetime
 from .models import PasswordChangeResult, OperationStatus
@@ -130,7 +128,7 @@ class RemotePasswordExecutor:
             stdout, _ = await result.communicate()
             if stdout:
                 return "chpasswd"
-        except:
+        except Exception:
             pass
         
         return "passwd"
@@ -256,7 +254,10 @@ set -e
         Returns True if login succeeds with new password
         """
         # Try to SSH with new password
-        cmd = f"sshpass -p '{password}' ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {username}@{host} 'exit 0'"
+        cmd = (
+            f"sshpass -p '{password}' ssh -o ConnectTimeout=5 "
+            f"-o StrictHostKeyChecking=yes {username}@{host} 'exit 0'"
+        )
         
         try:
             process = await asyncio.create_subprocess_shell(
@@ -272,7 +273,7 @@ set -e
             
             return process.returncode == 0
         
-        except:
+        except Exception:
             return False
     
     async def rollback_password(
@@ -322,7 +323,7 @@ class SSHExecutor:
         - (returncode, stdout, stderr)
         """
         # Build SSH command
-        ssh_opts = "-o ConnectTimeout=5 -o StrictHostKeyChecking=no"
+        ssh_opts = "-o ConnectTimeout=5 -o StrictHostKeyChecking=yes"
         
         if key_file:
             ssh_cmd = f"ssh {ssh_opts} -i {key_file} {username}@{host} '{command}'"

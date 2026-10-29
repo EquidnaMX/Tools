@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, Optional, List
 try:
     from google.cloud import storage
     from google.oauth2 import service_account
-    from google.api_core.exceptions import GoogleAPICallError, NotFound
+    from google.api_core.exceptions import NotFound
     HAS_GCS = True
 except ImportError:
     HAS_GCS = False

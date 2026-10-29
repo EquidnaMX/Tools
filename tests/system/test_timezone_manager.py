@@ -3,9 +3,8 @@ Tests for TimezoneManager.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import subprocess
-import platform
 
 from tools.system.timezone_manager import TimezoneManager, TimezoneError
 
@@ -66,15 +65,37 @@ class TestTimezoneManager:
 
     @patch('platform.system')
     @patch('subprocess.run')
-    def test_get_timezone_error(self, mock_run, mock_platform):
+    def test_get_timezone_error(self, mock_run, mock_platform, monkeypatch):
         """Test error handling when getting timezone."""
         mock_platform.return_value = "Linux"
         mock_run.side_effect = subprocess.CalledProcessError(1, "timedatectl")
+        # Do not consult the real host's /etc/localtime fallback.
+        monkeypatch.setattr("tools.system.timezone_manager.Path.is_symlink", lambda _: False)
         
         manager = TimezoneManager()
         
         with pytest.raises(TimezoneError):
             manager.get_current_timezone()
+
+    @pytest.mark.parametrize(
+        "target,expected",
+        [("/usr/share/zoneinfo/America/Mexico_City", "America/Mexico_City"),
+         ("/tmp/unrelated", None)],
+    )
+    def test_timedatectl_failure_uses_only_controlled_fallback(self, target, expected):
+        from pathlib import PurePosixPath
+
+        with patch("platform.system", return_value="Linux"), \
+             patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "timedatectl")), \
+             patch("tools.system.timezone_manager.Path") as path:
+            path.return_value.is_symlink.return_value = True
+            path.return_value.resolve.return_value = PurePosixPath(target)
+            manager = TimezoneManager()
+            if expected is None:
+                with pytest.raises(TimezoneError):
+                    manager.get_current_timezone()
+            else:
+                assert manager.get_current_timezone() == expected
 
     @patch('platform.system')
     def test_get_timezone_unsupported_platform(self, mock_platform):

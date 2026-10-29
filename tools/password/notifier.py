@@ -5,13 +5,12 @@ Sends email and webhook notifications for password change operations.
 """
 
 import smtplib
-import json
 import asyncio
-from typing import List, Optional
+from typing import List
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-from .models import NotificationConfig, PasswordChangeResult, OperationStatus
+from .models import NotificationConfig, OperationStatus
 
 try:
     import aiohttp
@@ -45,7 +44,7 @@ class EmailNotifier:
         
         try:
             # Build email body
-            body = self._build_email_body(results, include_results)
+            self._build_email_body(results, include_results)
             
             # Create message
             msg = MIMEMultipart('alternative')

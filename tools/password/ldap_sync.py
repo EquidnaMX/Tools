@@ -239,7 +239,7 @@ class LDAPSync:
             epoch = datetime(1970, 1, 1)
             expiry = epoch + __import__('datetime').timedelta(days=days)
             return expiry
-        except:
+        except Exception:
             return None
 
 
@@ -273,7 +273,7 @@ class LDAPCredentialStore:
             )
             
             return True
-        except:
+        except Exception:
             return False
     
     def get_config(self, config_name: str) -> Optional[LDAPConfig]:
@@ -292,5 +292,5 @@ class LDAPCredentialStore:
             
             config_dict = json.loads(data)
             return LDAPConfig(**config_dict)
-        except:
+        except Exception:
             return None

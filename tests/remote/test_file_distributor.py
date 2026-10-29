@@ -188,6 +188,8 @@ class TestFileDistributor:
         assert "scp" in cmd
         assert "testuser@192.168.1.1:/opt/file.txt" in cmd_str
         assert "-i" not in cmd_str  # No SSH key should be included
+        assert "StrictHostKeyChecking=yes" in cmd
+        assert not any("UserKnownHostsFile=" in argument for argument in cmd)
 
     @patch("subprocess.run")
     def test_transfer_single_success(

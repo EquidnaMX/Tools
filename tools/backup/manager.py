@@ -5,7 +5,7 @@ from __future__ import annotations
 import tarfile
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import List, Optional
 
 
@@ -56,7 +56,9 @@ class BackupManager:
         items.sort(key=lambda i: i.created_at, reverse=True)
         return items
 
-    def apply_rotation(self, prefix: Optional[str] = None, keep: Optional[int] = None) -> List[Path]:
+    def apply_rotation(
+        self, prefix: Optional[str] = None, keep: Optional[int] = None
+    ) -> List[Path]:
         """Delete old backups and keep only the newest N entries."""
         keep_count = self.keep if keep is None else keep
         if keep_count < 0:
@@ -69,7 +71,9 @@ class BackupManager:
             deleted.append(item.path)
         return deleted
 
-    def restore_backup(self, backup_file: Path | str, destination: Path | str, overwrite: bool = False) -> Path:
+    def restore_backup(
+        self, backup_file: Path | str, destination: Path | str, overwrite: bool = False
+    ) -> Path:
         """Restore a backup archive into destination and return extracted root path."""
         archive = Path(backup_file).expanduser().resolve()
         if not archive.exists() or not archive.is_file():
@@ -97,13 +101,49 @@ class BackupManager:
     def _build_backup_name(self, source: Path, name: Optional[str]) -> str:
         stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
         base = name.strip() if name else source.name
-        safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in base)
+        safe = "".join(
+            ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in base
+        )
         return f"{safe}_{stamp}.tar.gz"
 
     def _safe_extract(self, tar: tarfile.TarFile, destination: Path) -> None:
+        """Constrain names and links, then filter again as each member is extracted."""
         dest_resolved = destination.resolve()
+        if not hasattr(tarfile, "data_filter"):
+            raise BackupError(
+                "Safe restore requires a Python security update with tarfile.data_filter"
+            )
         for member in tar.getmembers():
-            target_path = (destination / member.name).resolve()
-            if not str(target_path).startswith(str(dest_resolved)):
+            # Backslashes and drive names have platform-dependent interpretations.
+            name = PurePosixPath(member.name)
+            if (
+                name.is_absolute()
+                or PureWindowsPath(member.name).drive
+                or "\\" in member.name
+            ):
                 raise BackupError(f"Unsafe path in archive: {member.name}")
-        tar.extractall(path=destination)
+            target_path = (dest_resolved / member.name).resolve()
+            try:
+                target_path.relative_to(dest_resolved)
+                if member.issym() or member.islnk():
+                    link = PurePosixPath(member.linkname)
+                    if (
+                        link.is_absolute()
+                        or PureWindowsPath(member.linkname).drive
+                        or "\\" in member.linkname
+                    ):
+                        raise ValueError("Absolute or platform-specific link")
+                    base = target_path.parent if member.issym() else dest_resolved
+                    (base / member.linkname).resolve().relative_to(dest_resolved)
+                elif not (member.isfile() or member.isdir()):
+                    raise ValueError("Special archive member")
+            except ValueError as exc:
+                raise BackupError(
+                    f"Unsafe path or link in archive: {member.name}"
+                ) from exc
+        try:
+            # Revalidate against links created by earlier members, not only the
+            # original destination tree. Explicit filtering is required on 3.8–3.13.
+            tar.extractall(path=dest_resolved, filter=tarfile.data_filter)
+        except (tarfile.TarError, OSError) as exc:
+            raise BackupError(f"Unsafe or unreadable backup: {exc}") from exc

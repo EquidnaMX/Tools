@@ -109,6 +109,16 @@ class TestExecutionStats:
 class TestSSHExecutor:
     """Test SSHExecutor class."""
 
+    def test_host_identity_is_verified_by_default(self):
+        command = SSHExecutor()._build_ssh_command("example.test", "true")
+        assert "StrictHostKeyChecking=yes" in command
+        assert not any("UserKnownHostsFile=" in item for item in command)
+
+    def test_insecure_opt_out_must_be_explicit(self):
+        command = SSHExecutor(strict_host_key_checking=False)._build_ssh_command("example.test", "true")
+        assert "StrictHostKeyChecking=no" in command
+        assert not any("UserKnownHostsFile=" in item for item in command)
+
     @pytest.fixture
     def executor(self):
         """Create SSHExecutor instance for testing."""

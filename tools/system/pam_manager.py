@@ -121,15 +121,15 @@ def generate_diff(original: str, modified: str, filename: str = "PAM file") -> s
     """Generate unified diff between two text strings."""
     original_lines = original.splitlines(keepends=True)
     modified_lines = modified.splitlines(keepends=True)
-    
+
     diff_lines = difflib.unified_diff(
         original_lines,
         modified_lines,
         fromfile=f"{filename} (original)",
         tofile=f"{filename} (modified)",
-        lineterm=""
+        lineterm="",
     )
-    
+
     return "".join(diff_lines)
 
 
@@ -182,7 +182,9 @@ class PAMManager:
             raise PAMManagerError("module_name cannot be empty")
 
         content = self.read_service(service)
-        pattern = re.compile(rf"^\s*(auth|account|password|session)\s+\S+\s+{re.escape(module_name)}(\s|$)")
+        pattern = re.compile(
+            rf"^\s*(auth|account|password|session)\s+\S+\s+{re.escape(module_name)}(\s|$)"
+        )
         for line in content.splitlines():
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
@@ -208,9 +210,13 @@ class PAMManager:
             logger.info("Created PAM backup: %s", backup_path)
             return backup_path
         except OSError as exc:
-            raise PAMManagerError(f"Could not create backup {backup_path}: {exc}") from exc
+            raise PAMManagerError(
+                f"Could not create backup {backup_path}: {exc}"
+            ) from exc
 
-    def restore_backup(self, service: str, backup_file: Path | str, dry_run: bool = False) -> bool:
+    def restore_backup(
+        self, service: str, backup_file: Path | str, dry_run: bool = False
+    ) -> bool:
         """Restore a backup file over the PAM service file."""
         target = self._service_path(service)
         backup_path = Path(backup_file)
@@ -228,7 +234,9 @@ class PAMManager:
             logger.info("Restored PAM backup: %s -> %s", backup_path, target)
             return True
         except OSError as exc:
-            raise PAMManagerError(f"Could not restore backup {backup_path}: {exc}") from exc
+            raise PAMManagerError(
+                f"Could not restore backup {backup_path}: {exc}"
+            ) from exc
 
     def ensure_line(
         self,
@@ -246,7 +254,7 @@ class PAMManager:
         If match_pattern is provided and a line matches it, that line is replaced.
         Otherwise, if exact line does not exist, it is appended or inserted after
         after_pattern if provided.
-        
+
         Args:
             service: PAM service name
             line: Line to ensure in the file
@@ -317,7 +325,9 @@ class PAMManager:
             try:
                 path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
             except OSError as exc:
-                raise PAMManagerError(f"Could not write PAM file {path}: {exc}") from exc
+                raise PAMManagerError(
+                    f"Could not write PAM file {path}: {exc}"
+                ) from exc
 
         if updated and dry_run:
             logger.info("[DRY-RUN] Would update PAM file: %s", path)
@@ -341,40 +351,40 @@ class PAMManager:
     ) -> PAMHardeningResult:
         """
         Apply a security hardening profile to a PAM service.
-        
+
         Args:
             service: PAM service name (e.g., 'sshd', 'login', 'su')
             profile: Hardening profile name. If None, uses service name as profile
             backup_dir: Optional directory to store backup before changes
             dry_run: If True, show what would happen without making changes
             show_diff: If True, generate unified diff of changes
-            
+
         Returns:
             PAMHardeningResult with status and optional diff
-            
+
         Raises:
             PAMManagerError: If profile not found or service file doesn't exist
         """
         profile_name = profile or service
-        
+
         if profile_name not in HARDENING_PROFILES:
             available = ", ".join(sorted(HARDENING_PROFILES.keys()))
             raise PAMManagerError(
                 f"Unknown hardening profile: {profile_name}. "
                 f"Available profiles: {available}"
             )
-        
+
         path = self._service_path(service)
         if not path.exists():
             raise PAMManagerError(f"PAM service file not found: {path}")
-        
+
         # Read current content
         original_content = self.read_service(service)
-        
+
         # Apply hardening profile
         profile_lines = HARDENING_PROFILES[profile_name]
         new_content = "\n".join(profile_lines) + "\n"
-        
+
         # Check if already applied
         if original_content == new_content:
             return PAMHardeningResult(
@@ -384,27 +394,33 @@ class PAMManager:
                 dry_run=dry_run,
                 diff=None,
             )
-        
+
         # Create backup if requested
         backup_path: Optional[Path] = None
         if backup_dir is not None:
             backup_path = self.create_backup(service, backup_dir)
-        
+
         # Generate diff if requested
         diff_output: Optional[str] = None
         if show_diff:
             diff_output = generate_diff(original_content, new_content, str(path))
-        
+
         # Apply changes unless dry-run
         if not dry_run:
             try:
                 path.write_text(new_content, encoding="utf-8")
                 logger.info("Applied %s hardening profile to %s", profile_name, service)
             except OSError as exc:
-                raise PAMManagerError(f"Could not write PAM file {path}: {exc}") from exc
+                raise PAMManagerError(
+                    f"Could not write PAM file {path}: {exc}"
+                ) from exc
         else:
-            logger.info("[DRY-RUN] Would apply %s hardening profile to %s", profile_name, service)
-        
+            logger.info(
+                "[DRY-RUN] Would apply %s hardening profile to %s",
+                profile_name,
+                service,
+            )
+
         return PAMHardeningResult(
             service=service,
             profile=profile_name,
@@ -413,4 +429,3 @@ class PAMManager:
             backup_path=backup_path,
             diff=diff_output,
         )
-

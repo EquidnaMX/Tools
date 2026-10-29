@@ -175,9 +175,7 @@ class FileDistributor:
             "-o",
             f"ConnectTimeout={self.timeout}",
             "-o",
-            "UserKnownHostsFile=/dev/null",
-            "-o",
-            "StrictHostKeyChecking=no",
+            "StrictHostKeyChecking=yes",
             "-o",
             "LogLevel=ERROR",
         ]

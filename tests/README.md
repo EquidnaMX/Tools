@@ -2,6 +2,12 @@
 
 Documentación del sistema de testing del proyecto.
 
+Por defecto se ejecutan las pruebas locales y se excluye el marcador `integration`.
+Las pruebas de integración incluyen conexiones SSH y escaneos de red; siguen
+disponibles con `python -m pytest tests -m integration` para un entorno autorizado.
+Las pruebas unitarias de Cloud y cambios de contraseña usan clientes/procesos
+simulados y no modifican servidores.
+
 ## 📊 Cobertura Actual
 
 - **Total de Tests:** 435 totales

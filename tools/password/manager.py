@@ -7,12 +7,10 @@ Coordinates validators, generators, executors, auditors, LDAP sync, and notifica
 import asyncio
 import getpass
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
-from pathlib import Path
 
 from .models import (
     PasswordPolicy, PasswordChangeResult, OperationStatus, LDAPConfig,
-    NotificationConfig, RotationPolicy, ChangeRequest, AuditEntry
+    NotificationConfig, RotationPolicy, AuditEntry
 )
 from .validators import PasswordValidator, PasswordHistoryValidator
 from .generators import PasswordGenerator
@@ -134,7 +132,7 @@ class PasswordManager:
         operator = self._get_operator_info()
         
         print(f"\n{'='*70}")
-        print(f"PASSWORD CHANGE OPERATION")
+        print("PASSWORD CHANGE OPERATION")
         print(f"{'='*70}")
         print(f"Hosts: {len(hosts)} servidor(es)")
         for host in hosts:
@@ -169,7 +167,7 @@ class PasswordManager:
         # Validate new password
         valid, details = self.validate_password(new_password)
         if not valid:
-            print(f"❌ La contraseña no cumple la política:")
+            print("❌ La contraseña no cumple la política:")
             for error in details['errors']:
                 print(f"   - {error}")
             return {}
@@ -181,7 +179,7 @@ class PasswordManager:
         
         # Execute changes
         if dry_run:
-            print(f"\n🧪 MODO DRY-RUN - Simulando cambios sin ejecutar...\n")
+            print("\n🧪 MODO DRY-RUN - Simulando cambios sin ejecutar...\n")
             results = {}
             for host in hosts:
                 results[host] = PasswordChangeResult(
@@ -305,7 +303,7 @@ class PasswordManager:
                 validator = PasswordValidator(policy)
                 result = validator.validate(password)
                 if not result.valid:
-                    print(f"❌ Contraseña no válida:")
+                    print("❌ Contraseña no válida:")
                     for error in result.errors:
                         print(f"   - {error}")
                     continue
@@ -359,7 +357,7 @@ class PasswordManager:
         timeout = sum(1 for r in results.values() if r.status == OperationStatus.TIMEOUT)
         
         print(f"\n{'='*70}")
-        print(f"RESUMEN FINAL")
+        print("RESUMEN FINAL")
         print(f"{'='*70}")
         print(f"✓ Exitosos:  {success}/{len(results)}")
         print(f"✗ Fallidos:  {failed}/{len(results)}")
