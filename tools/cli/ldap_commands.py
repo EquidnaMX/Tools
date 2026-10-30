@@ -4,6 +4,8 @@ Comandos CLI para autenticación LDAP.
 
 import click
 from pathlib import Path
+from tools.ldap.connection import probe_connection
+from tools.ldap.audit import audit_client
 from tools.ldap import (
     LDAPClientInstaller,
     LDAPConfig,
@@ -18,6 +20,18 @@ from tools.ldap import (
 def ldap():
     """Comandos de autenticación LDAP."""
     pass
+
+
+@ldap.command(name="doctor")
+@click.option("--root", default="/", type=click.Path(exists=True, file_okay=False), show_default=True)
+def doctor(root):
+    """Inspeccionar archivos LDAP, PAM y SSH sin cambiarlos ni conectar por red."""
+    import json
+
+    report = audit_client(root)
+    click.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    if not report["success"]:
+        raise click.ClickException("Hay fallos de configuración; revisar el informe")
 
 
 def _local_group_installer(dry_run: bool = False) -> LDAPClientInstaller:
@@ -50,6 +64,8 @@ def _sudoers_manager(dry_run: bool = False) -> SudoersManager:
 )
 @click.option(
     "--bind-password",
+    envvar="TOOLS_LDAP_BIND_PASSWORD",
+    hide_input=True,
     help="Password para bind DN (opcional)",
 )
 @click.option(
@@ -69,6 +85,13 @@ def _sudoers_manager(dry_run: bool = False) -> SudoersManager:
     "--use-tls/--no-tls",
     default=True,
     help="Usar TLS/STARTTLS (default: True)",
+)
+@click.option("--ca-file", type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option("--timeout", type=click.IntRange(1, 300), default=30, show_default=True)
+@click.option("--ssh-sudo-user", help="Usuario para autenticar sudo y sudo-i con agente SSH")
+@click.option(
+    "--ssh-sudo-public-key", type=click.Path(exists=True, dir_okay=False),
+    help="Archivo de una llave pública OpenSSH; requiere --ssh-sudo-user",
 )
 @click.option(
     "--create-homedir/--no-create-homedir",
@@ -99,6 +122,10 @@ def configure_client(
     allowed_groups,
     mode,
     use_tls,
+    ca_file,
+    timeout,
+    ssh_sudo_user,
+    ssh_sudo_public_key,
     create_homedir,
     password_hash,
     dry_run,
@@ -107,9 +134,8 @@ def configure_client(
     """
     Configura un cliente Linux para autenticarse con LDAP.
 
-    Instala y configura PAM, NSLCD/SSSD y NSSwitch para permitir
-    autenticación de usuarios LDAP. Crea backups automáticos de
-    todos los archivos modificados.
+    Valida un plan con --dry-run o genera un script revisable con
+    --output-script. La ejecución directa está deshabilitada.
 
     Ejemplos:
 
@@ -144,6 +170,8 @@ def configure_client(
             --base-dn dc=example,dc=com \\
             --dry-run
     """
+    if bind_dn and bind_password is None:
+        bind_password = click.prompt("Contraseña de bind", hide_input=True)
     # Configurar LDAP
     ldap_config = LDAPConfig(
         uri=ldap_uri,
@@ -151,7 +179,10 @@ def configure_client(
         bind_dn=bind_dn,
         bind_password=bind_password,
         use_tls=use_tls,
+        search_timeout=timeout,
     )
+    if ca_file:
+        ldap_config.tls_cacert_file = ca_file
 
     # Configurar PAM
     pam_config = PAMConfig(
@@ -167,6 +198,8 @@ def configure_client(
         pam_config=pam_config,
         mode=install_mode,
         dry_run=dry_run,
+        ssh_sudo_user=ssh_sudo_user,
+        ssh_sudo_public_key=ssh_sudo_public_key,
     )
 
     # Generar script o instalar
@@ -258,9 +291,14 @@ def configure_client(
 )
 @click.option(
     "--bind-password",
+    envvar="TOOLS_LDAP_BIND_PASSWORD",
+    hide_input=True,
     help="Password para bind DN (opcional)",
 )
-def test_connection(ldap_uri, base_dn, bind_dn, bind_password):
+@click.option("--use-tls/--no-tls", default=True, show_default=True)
+@click.option("--ca-file", type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option("--timeout", type=click.IntRange(1, 300), default=30, show_default=True)
+def test_connection(ldap_uri, base_dn, bind_dn, bind_password, use_tls, ca_file, timeout):
     """
     Prueba la conexión al servidor LDAP.
 
@@ -273,36 +311,16 @@ def test_connection(ldap_uri, base_dn, bind_dn, bind_password):
             --ldap-uri ldap://ldap.example.com \\
             --base-dn dc=example,dc=com
     """
-    click.echo("Probando conexión a LDAP...")
-    click.echo(f"  URI: {ldap_uri}")
-    click.echo(f"  Base DN: {base_dn}")
-
     try:
-        import ldap
-
-        # Conectar
-        conn = ldap.initialize(ldap_uri)
-        conn.set_option(ldap.OPT_REFERRALS, 0)
-
-        # Bind
-        if bind_dn:
-            conn.simple_bind_s(bind_dn, bind_password or "")
-        else:
-            conn.simple_bind_s("", "")
-
-        # Búsqueda simple
-        result = conn.search_s(base_dn, ldap.SCOPE_BASE)
-
-        click.secho("\n✓ Conexión exitosa!", fg="green", bold=True)
-
-        if result:
-            click.echo("\nInformación del servidor:")
-            for dn, attrs in result:
-                click.echo(f"  DN: {dn}")
-                for key, values in attrs.items():
-                    click.echo(f"    {key.decode()}: {values[0].decode()}")
-
-        conn.unbind_s()
+        if bind_dn and bind_password is None:
+            bind_password = click.prompt("Contraseña de bind", hide_input=True)
+        config = LDAPConfig(ldap_uri, base_dn, bind_dn, bind_password,
+                            use_tls=use_tls, search_timeout=timeout)
+        if ca_file:
+            config.tls_cacert_file = ca_file
+        LDAPClientInstaller(config)._validate()
+        result = probe_connection(config)
+        click.echo("✓ Conexión y búsqueda base correctas; TLS: " + str(result["encrypted"]))
 
     except ImportError:
         click.secho(
@@ -313,9 +331,11 @@ def test_connection(ldap_uri, base_dn, bind_dn, bind_password):
         click.echo("\nInstalar con: pip install python-ldap")
         raise click.Abort()
 
-    except Exception as e:
-        click.secho(f"\n✗ Error de conexión: {e}", fg="red", bold=True)
-        raise click.Abort()
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except Exception as exc:
+        # LDAP diagnostic strings may contain server-provided sensitive data.
+        raise click.ClickException("Fallo de conexión LDAP: " + type(exc).__name__) from exc
 
 
 @ldap.command(name="generate-config")

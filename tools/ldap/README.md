@@ -47,6 +47,43 @@ Las credenciales y parámetros se conservan en el script y en su configuración 
 
 `--bind-password` sigue siendo un argumento de CLI: evitar historial y exposición de procesos para secretos reales; preferir la API Python con secretos obtenidos de un gestor. NSLCD y SSSD necesitan la contraseña de bind en su configuración local protegida, con modo `0600`.
 
+## Autenticación de sudo y sudo-i mediante agente SSH
+
+Para incluir tu llave pública en el plan, indicar ambas opciones:
+
+```bash
+tools ldap configure-client \
+  --ldap-uri ldap://zeus.ometra.mx \
+  --base-dn dc=sistemas-teleurban,dc=com \
+  --ssh-sudo-user gruelas \
+  --ssh-sudo-public-key ~/.ssh/gruelas.pub \
+  --output-script configure_ldap.sh
+```
+
+La generación sigue sin aplicar cambios. El script revisado instala `libpam-ssh-agent-auth`,
+respalda **ambos** servicios PAM (`sudo` y `sudo-i`) y conserva sus reglas de cuenta,
+sesión y contraseña. Añade una regla de autenticación por agente antes de los includes
+de autenticación de cada servicio. La llave pública se guarda en
+`/etc/security/authorized_keys_sudo_gruelas`, root:root `0600`; un fragmento sudoers
+`0440`, validado con `visudo`, conserva `SSH_AUTH_SOCK` solo para ese usuario.
+
+No copia la llave privada, no modifica `authorized_keys` de SSH, no concede permisos
+de comandos sudo ni añade `NOPASSWD`. El usuario debe tener autorización sudo previa.
+Se requiere `ssh-keygen` en el equipo generador para validar una única llave pública
+OpenSSH. Sin estas opciones no cambia la configuración de sudo. Si un servicio no
+existe o contiene otra regla de autenticación por agente, la aplicación falla para
+revisión; no sustituye silenciosamente una política de llaves compartidas.
+
+Las escrituras de PAM son atómicas por archivo e idempotentes; si falla la aplicación,
+la reversión del script recupera ambos archivos y las demás configuraciones respaldadas.
+Los paquetes instalados se conservan. Mantener una sesión administrativa independiente.
+Después de aplicar, comprobar en conexiones nuevas `sudo -k; sudo id -u` y
+`sudo -k; sudo -i id -u` con agente reenviado; repetir sin agente ni contraseña y
+confirmar el rechazo. La generación y las pruebas locales no acreditan ese acceso real.
+
+El script completo también reemplaza PAM común y NSS como se advierte arriba:
+no usarlo únicamente para reparar sudo en un servidor existente sin revisar todo el plan.
+
 ## Grupos permitidos y migración
 
 Las reglas se gestionan en `/etc/pam.d/common-account`, antes de cualquier regla o `@include` que pudiera conceder acceso. La autenticación no se modifica al agregar o quitar grupos.
@@ -98,6 +135,36 @@ Ante error o interrupción, restaura las configuraciones, reinicia los servicios
 Para recuperación manual, revisar el manifiesto, restaurar las copias conservando metadatos y retirar solo los archivos nuevos de ese intento. Comprobar la configuración del daemon antes de reiniciarlo. No restaurar ciegamente sobre cambios posteriores.
 
 ## Comprobación
+
+### Diagnóstico de configuración sin cambios
+
+`tools ldap doctor` inspecciona los archivos NSLCD/SSSD, PAM y SSH del equipo
+local; `--root /ruta/copia` permite revisar una copia de `etc/` sin tocar el sistema.
+Emite JSON sin contraseñas ni contenidos completos. Identifica transporte sin
+TLS, políticas de certificados débiles, CA faltante y `UsePAM no` explícito.
+Las inclusiones y condiciones de sshd/PAM requieren revisión: el informe marca
+esos puntos como pendientes, no como acceso comprobado.
+
+### Conexión LDAP
+
+```bash
+tools ldap test-connection --ldap-uri ldap://zeus.ometra.mx --base-dn '<BASE_DN_REAL>'
+```
+
+TLS está activo por defecto: `ldap://` negocia StartTLS antes del bind y
+`ldaps://` usa TLS directo. Se exige certificado verificable, con `--ca-file`
+para una CA específica y `--timeout` para limitar la conexión y operaciones.
+Un bind con contraseña por LDAP sin cifrado se rechaza. La búsqueda base y el
+cierre de conexión se comprueban; no se publican atributos del directorio.
+
+Para bind autenticado, usar `--bind-dn '<DN_LECTURA>'` y la solicitud de contraseña
+oculta, o la variable `TOOLS_LDAP_BIND_PASSWORD`. Evitar contraseñas en argumentos
+porque pueden quedar en el historial o la lista de procesos. La variable también
+se acepta en `configure-client`; los scripts generados siguen siendo sensibles.
+Una búsqueda exitosa no demuestra resolución NSS, pertenencia de grupos ni
+autenticación PAM/SSH. Esas comprobaciones quedan para un entorno de prueba.
+
+Referencia: [opciones TLS y StartTLS de python-ldap](https://www.python-ldap.org/en/latest/reference/ldap.html).
 
 Otros comandos disponibles:
 

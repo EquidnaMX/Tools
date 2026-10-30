@@ -13,6 +13,7 @@ from tools.core.reporter import JSONReporter, CSVReporter
 from tools.remote.ssh_executor import SSHExecutor
 from tools.remote.file_distributor import FileDistributor
 from tools.remote.network_scanner import NetworkScanner
+from tools.cli.ssh_key_commands import keys
 
 logger = get_logger(__name__)
 
@@ -21,6 +22,9 @@ logger = get_logger(__name__)
 def remote() -> None:
     """Remote management: execute commands, distribute files, scan networks."""
     pass
+
+
+remote.add_command(keys)
 
 
 @remote.command(name="exec")

@@ -1,0 +1,14 @@
+{
+  "keys": {
+    "administrador": "./keys/administrador.pub",
+    "recuperacion": "./keys/recuperacion.pub"
+  },
+  "servers": [
+    {
+      "host": "servidor.example.com",
+      "user": "administrador",
+      "port": 22,
+      "keys": ["administrador", "recuperacion"]
+    }
+  ]
+}

@@ -10,9 +10,14 @@ from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional
 import os
+import inspect
 import re
 import shlex
 import tempfile
+
+from tools.ldap.connection import validate_endpoint
+from tools.ldap import ssh_agent_sudo
+from tools.remote.ssh_keys import validate_public_key
 
 
 class InstallationMode(Enum):
@@ -25,7 +30,7 @@ class LDAPConfig:
     uri: str
     base_dn: str
     bind_dn: Optional[str] = None
-    bind_password: Optional[str] = None
+    bind_password: Optional[str] = field(default=None, repr=False)
     use_tls: bool = True
     tls_reqcert: str = "demand"
     tls_cacert_file: Optional[str] = "/etc/ssl/certs/ca-certificates.crt"
@@ -69,17 +74,27 @@ class LDAPClientInstaller:
     GROUP_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\Z")
 
     def __init__(
-        self, ldap_config, pam_config=None, mode=InstallationMode.NSLCD, dry_run=False
+        self, ldap_config, pam_config=None, mode=InstallationMode.NSLCD, dry_run=False,
+        ssh_sudo_user=None, ssh_sudo_public_key=None,
     ):
         self.ldap_config = ldap_config
         self.pam_config = pam_config or PAMConfig()
         self.mode = mode
         self.dry_run = dry_run
+        self.ssh_sudo_user = ssh_sudo_user
+        self.ssh_sudo_public_key = ssh_sudo_public_key
         self.backups_created = []
         self.steps_completed = []
         self.steps_failed = []
 
     def _validate(self):
+        if self.ssh_sudo_user is not None or self.ssh_sudo_public_key is not None:
+            if not self.ssh_sudo_user or not self.ssh_sudo_public_key:
+                raise ValueError("Specify both ssh_sudo_user and ssh_sudo_public_key")
+            if not isinstance(self.ssh_sudo_user, str) or not re.fullmatch(
+                r"[A-Za-z_][A-Za-z0-9_-]*", self.ssh_sudo_user
+            ):
+                raise ValueError("Invalid sudo authentication user")
         if not isinstance(self.mode, InstallationMode):
             raise ValueError("Unsupported LDAP mode")
         cfg = self.ldap_config
@@ -89,10 +104,15 @@ class LDAPClientInstaller:
                 not isinstance(value, str) or any(c in value for c in "\r\n\0")
             ):
                 raise ValueError(f"{name} must be a single configuration value")
-        if not re.fullmatch(r"ldaps?://[^\s]+", cfg.uri) or not cfg.base_dn.strip():
+        validate_endpoint(cfg.uri)
+        if not cfg.base_dn.strip():
             raise ValueError("An LDAP URI and nonempty base DN are required")
-        if cfg.bind_dn and cfg.bind_password is None:
+        if cfg.bind_dn and not cfg.bind_password:
             raise ValueError("bind_password is required with bind_dn")
+        if cfg.bind_password and not cfg.bind_dn:
+            raise ValueError("bind_dn is required with bind_password")
+        if cfg.bind_dn and cfg.uri.startswith("ldap://") and not cfg.use_tls:
+            raise ValueError("Refusing a password bind over unencrypted LDAP")
         if cfg.tls_reqcert not in ("never", "allow", "try", "demand", "hard"):
             raise ValueError("Unsupported TLS certificate policy")
         if cfg.search_timeout <= 0 or cfg.reconnect_tries <= 0:
@@ -138,6 +158,9 @@ class LDAPClientInstaller:
             print("[DRY-RUN] Packages: " + " ".join(self._packages()))
             for path, (content, _) in configs.items():
                 print(f"[DRY-RUN] Would back up and write {path}:\n{content}")
+            if self.ssh_sudo_user:
+                print("[DRY-RUN] Would back up and preserve/update both "
+                      "/etc/pam.d/sudo and /etc/pam.d/sudo-i for SSH agent authentication")
             self.steps_completed = ["validate_plan", "render_configuration (dry-run)"]
             return self._create_result(
                 True,
@@ -342,11 +365,14 @@ class LDAPClientInstaller:
         return self._change_group(group, False, pam_account_file, pam_auth_file)
 
     def _packages(self):
-        return (
+        packages = (
             ["libpam-ldapd", "libnss-ldapd", "nslcd", "nscd"]
             if self.mode == InstallationMode.NSLCD
             else ["sssd", "libpam-sss", "libnss-sss"]
         )
+        if self.ssh_sudo_user:
+            packages += ["libpam-ssh-agent-auth", "python3", "sudo"]
+        return packages
 
     def _daemon_config(self, redact=False):
         self._validate()
@@ -444,6 +470,13 @@ class LDAPClientInstaller:
             else "/etc/sssd/sssd.conf"
         )
         configs[daemon] = (self._daemon_config(redact=redact), 0o600)
+        if self.ssh_sudo_user:
+            key = validate_public_key(self.ssh_sudo_public_key)
+            user = self.ssh_sudo_user
+            configs[f"/etc/security/authorized_keys_sudo_{user}"] = (key.line + "\n", 0o600)
+            configs[f"/etc/sudoers.d/90-tools-ssh-agent-{user}"] = (
+                f'Defaults:{user} env_keep += "SSH_AUTH_SOCK"\n', 0o440
+            )
         return configs
 
     def generate_script(self):
@@ -495,6 +528,12 @@ trap 'rollback; exit 143' TERM
 """
         services = "nslcd nscd" if self.mode == InstallationMode.NSLCD else "sssd"
         script = script.replace("__TOOLS_SERVICES__", services)
+        if self.ssh_sudo_user:
+            script = script.replace(
+                'backup_dir=$(mktemp',
+                'command -v visudo >/dev/null\nvisudo -c\nbackup_dir=$(mktemp',
+                1,
+            )
         for service in services.split():
             script += (
                 f"if systemctl is-active --quiet {service}; then "
@@ -502,6 +541,11 @@ trap 'rollback; exit 143' TERM
             )
         for index, path in enumerate(configs):
             script += f"backup_file {shlex.quote(path)} {index}\n"
+        if self.ssh_sudo_user:
+            for index, service in enumerate(("sudo", "sudo-i"), start=len(configs)):
+                path = f"/etc/pam.d/{service}"
+                script += f'[[ -f {path} ]] || {{ echo "Missing PAM service: {path}" >&2; exit 1; }}\n'
+                script += f"backup_file {path} {index}\n"
         script += "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-upgrade --no-install-recommends "
         script += " ".join(self._packages()) + "\n"
         for index, (path, (content, mode)) in enumerate(configs.items()):
@@ -512,7 +556,13 @@ trap 'rollback; exit 143' TERM
             script += f"staged=$(mktemp {shlex.quote(path + '.tools.XXXXXX')})\n"
             script += f"cat <<'{marker}' > \"$staged\"\n{content}{marker}\n"
             script += f'chmod {mode:o} "$staged"\nchown root:root "$staged"\n'
+            if path.startswith("/etc/sudoers.d/"):
+                script += 'visudo -cf "$staged"\n'
             script += f'mv -f -- "$staged" {shlex.quote(path)}\n'
+        if self.ssh_sudo_user:
+            source = inspect.getsource(ssh_agent_sudo)
+            script += f"python3 - {shlex.quote(self.ssh_sudo_user)} <<'TOOLS_SUDO_PAM_EOF'\n"
+            script += source + "\nTOOLS_SUDO_PAM_EOF\nvisudo -c\n"
         if self.mode == InstallationMode.SSSD:
             script += "if command -v sssctl >/dev/null; then sssctl config-check; fi\n"
         script += f"systemctl restart {services}\ntrap - ERR INT TERM\n"

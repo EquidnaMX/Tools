@@ -9,6 +9,9 @@ Toolkit profesional de administración de sistemas con CLI unificado para gesti�
 
 **Features principales:**
 
+Gestión de llaves SSH por inventario: ver [guía de validación y sincronización](tools/remote/README.md).
+Diagnóstico LDAP sin cambios: `tools ldap doctor` y [guía LDAP/PAM](tools/ldap/README.md).
+
 - 🚀 CLI unificado con 9 módulos integrados
 - ☁️ Multi-cloud storage (AWS, Azure, GCP, DigitalOcean, B2, MinIO)
 - 🔒 Optimizaciones avanzadas (cache, compression, encryption, bandwidth limiting)
